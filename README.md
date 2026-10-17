@@ -49,3 +49,34 @@ W VS Code zainstaluj rozszerzenie **PlatformIO IDE**, wybierz **File > Open Fold
 ## Źródła
 - https://github.com/paeqe/es3c28p-dap
 - https://www.lcdwiki.com/2.8inch_ESP32-S3_Display
+
+
+## LVGL: termostat pokojowy i panel administracyjny
+
+Firmware uruchamia cztery zakladki (240x320, LVGL 8):
+
+- **POKOJ** — ekran glowny: temperatura symulowana, temperatura zadana 15–30°C i logiczny status ogrzewania.
+- **ADMIN** — wlacznik trybu AUTO, histereza 0.2–2.0°C, suwak symulacji temperatury 10–35°C, raport peryferiow i odczyt ADC baterii.
+- **TESTY** — WS2812, podswietlenie, ton 440 Hz na ES8311, skanowanie I2C.
+- **SD/WIFI** — lista plikow microSD, skan sieci Wi-Fi i BLE.
+
+Nastawa, histereza i tryb zapisywane sa przez Arduino Preferences w NVS (namespace `thermostat`).
+Histereza działa jako dwupoziomowy regulator on/off: zalaczenie przy `temperatura <= cel - histereza/2`, wylaczenie przy `temperatura >= cel + histereza/2`.
+
+**Bezpieczenstwo:** temperaturę dostarcza obecnie wylacznie suwak symulacyjny. Program **nie steruje przekaznikiem, triakiem ani innym wyjsciem fizycznym**. Nie uzywac firmware jako rzeczywistego termostatu grzewczego bez podlaczenia i kalibracji czujnika, przypisania wyjscia i implementacji bezpiecznego stanu awaryjnego.
+
+### Budowa na Ubuntu / VS Code
+
+```bash
+python3 -m venv ~/.venvs/platformio
+~/.venvs/platformio/bin/pip install -U platformio
+git clone https://github.com/RobertRupa/28lcd.git
+cd 28lcd
+~/.venvs/platformio/bin/pio run
+~/.venvs/platformio/bin/pio run -t upload --upload-port /dev/ttyACM0
+~/.venvs/platformio/bin/pio device monitor -p /dev/ttyACM0 -b 115200
+```
+
+Po otwarciu katalogu w VS Code mozna uzyc rozszerzenia PlatformIO. Projekt ma zadeklarowane LVGL 8, LovyanGFX i Adafruit NeoPixel.
+
+Ograniczenia: kompilacja i test na fizycznej plytce nie zostaly przeprowadzone w ramach tej aktualizacji.
