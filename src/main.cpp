@@ -9,6 +9,7 @@
 #include <driver/i2s.h>
 #include <Adafruit_NeoPixel.h>
 #include <math.h>
+#include <Preferences.h>
 #include "board_config.h"
 #include "display.h"
 
@@ -148,15 +149,104 @@ static void onTone(lv_event_t*){
 static void onI2c(lv_event_t*){
  Serial.println("[I2C] scanning bus");for(int i=1;i<127;i++)if(i2cPing(i))Serial.printf("[I2C] 0x%02X\n",i);
 }
+
+static Preferences thermostatPrefs;
+static float setPoint=21.0f;
+static float roomTemp=20.0f; // TEST: simulated value; no physical sensor configured
+static float hysteresis=0.5f;
+static bool heatingEnabled=true;
+static bool heatingDemand=false; // Logic only; no relay GPIO is driven
+static lv_obj_t *roomLabel=nullptr,*targetLabel=nullptr,*heatLabel=nullptr,*thermoNote=nullptr,*adminLabel=nullptr;
+static lv_obj_t *targetSlider=nullptr,*simulationSlider=nullptr,*heatSwitch=nullptr,*hysteresisSlider=nullptr;
+
+static void thermostatRefresh(){
+ if(heatingEnabled){
+  if(heatingDemand && roomTemp >= setPoint+hysteresis/2.0f) heatingDemand=false;
+  else if(!heatingDemand && roomTemp <= setPoint-hysteresis/2.0f) heatingDemand=true;
+ } else heatingDemand=false;
+ char b[96];
+ if(roomLabel){snprintf(b,sizeof(b),"%.1f°C",roomTemp);lv_label_set_text(roomLabel,b);}
+ if(targetLabel){snprintf(b,sizeof(b),"Cel: %.1f°C",setPoint);lv_label_set_text(targetLabel,b);}
+ if(heatLabel)lv_label_set_text(heatLabel,heatingDemand?"GRZANIE: ZADANE":"GRZANIE: OFF");
+ if(adminLabel){snprintf(b,sizeof(b),"Histereza %.1f°C | %s\nTemperatura symulowana\nWyjscie przekaznika: NIEPRZYPISANE",hysteresis,heatingEnabled?"AUTO":"OFF");lv_label_set_text(adminLabel,b);}
+}
+static void onTarget(lv_event_t *e){
+ setPoint=lv_slider_get_value(lv_event_get_target(e))/10.0f;
+ thermostatPrefs.putFloat("target",setPoint);thermostatRefresh();
+}
+static void onSimulation(lv_event_t *e){
+ roomTemp=lv_slider_get_value(lv_event_get_target(e))/10.0f;thermostatRefresh();
+}
+static void onHeatEnable(lv_event_t *e){
+ heatingEnabled=lv_obj_has_state(lv_event_get_target(e),LV_STATE_CHECKED);
+ thermostatPrefs.putBool("enabled",heatingEnabled);thermostatRefresh();
+}
+static void onHysteresis(lv_event_t *e){
+ hysteresis=lv_slider_get_value(lv_event_get_target(e))/10.0f;
+ thermostatPrefs.putFloat("hyst",hysteresis);thermostatRefresh();
+}
+static lv_obj_t* makeHeading(lv_obj_t *parent,const char *str,uint8_t fontSize=0){
+ lv_obj_t *o=lv_label_create(parent);lv_label_set_text(o,str);
+ lv_obj_set_style_text_color(o,lv_color_hex(0xE2E8F0),0);
+ lv_obj_set_style_text_align(o,LV_TEXT_ALIGN_CENTER,0);
+ lv_obj_set_width(o,210);
+ if(fontSize==1)lv_obj_set_style_text_font(o,&lv_font_montserrat_14,0);
+ return o;
+}
+static void makeThermostat(lv_obj_t *tab){
+ lv_obj_set_style_bg_color(tab,lv_color_hex(0x111827),0);
+ lv_obj_set_style_pad_all(tab,8,0);
+ lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);
+ lv_obj_set_flex_align(tab,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
+ makeHeading(tab,"TERMOSTAT POKOJOWY");
+ makeHeading(tab,"TEMP. W POMIESZCZENIU");
+ roomLabel=makeHeading(tab,"20.0°C");
+ lv_obj_set_style_text_font(roomLabel,&lv_font_montserrat_28,0);
+ targetLabel=makeHeading(tab,"Cel: 21.0°C");
+ targetSlider=lv_slider_create(tab);lv_obj_set_width(targetSlider,195);
+ lv_slider_set_range(targetSlider,150,300);
+ lv_slider_set_value(targetSlider,(int)(setPoint*10),LV_ANIM_OFF);
+ lv_obj_add_event_cb(targetSlider,onTarget,LV_EVENT_VALUE_CHANGED,nullptr);
+ heatLabel=makeHeading(tab,"GRZANIE: OFF");
+ thermoNote=makeHeading(tab,"DEMO - temperatura symulowana");
+ lv_obj_set_style_text_color(thermoNote,lv_color_hex(0xFBBF24),0);
+ thermostatRefresh();
+}
+static void makeAdmin(lv_obj_t *tab){
+ lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(tab,8,0);
+ label(tab,"Panel administratora");
+ label(tab,"Termostat aktywny:");
+ heatSwitch=lv_switch_create(tab);
+ if(heatingEnabled)lv_obj_add_state(heatSwitch,LV_STATE_CHECKED);
+ lv_obj_add_event_cb(heatSwitch,onHeatEnable,LV_EVENT_VALUE_CHANGED,nullptr);
+ label(tab,"Histereza: 0.2 - 2.0 C");
+ hysteresisSlider=lv_slider_create(tab);lv_obj_set_width(hysteresisSlider,195);
+ lv_slider_set_range(hysteresisSlider,2,20);
+ lv_slider_set_value(hysteresisSlider,(int)(hysteresis*10),LV_ANIM_OFF);
+ lv_obj_add_event_cb(hysteresisSlider,onHysteresis,LV_EVENT_VALUE_CHANGED,nullptr);
+ label(tab,"Symulacja temperatury pomieszczenia (10-35 C):");
+ simulationSlider=lv_slider_create(tab);lv_obj_set_width(simulationSlider,195);
+ lv_slider_set_range(simulationSlider,100,350);
+ lv_slider_set_value(simulationSlider,(int)(roomTemp*10),LV_ANIM_OFF);
+ lv_obj_add_event_cb(simulationSlider,onSimulation,LV_EVENT_VALUE_CHANGED,nullptr);
+ adminLabel=label(tab,"");
+ label(tab,"Ustawienia celu, histerezy i trybu sa zapisywane w NVS.");
+ label(tab,"UWAGA: brak czujnika i wyjscia grzewczego. To panel demonstracyjny.");
+ statusLabel=label(tab,"");
+ batteryLabel=label(tab,"");
+ thermostatRefresh();
+}
+
 static void setupUI(){
- lv_obj_t *tabs=lv_tabview_create(lv_scr_act(),LV_DIR_TOP,35);
- lv_obj_t *info=lv_tabview_add_tab(tabs,"STATUS");
+ lv_obj_t *tabs=lv_tabview_create(lv_scr_act(),LV_DIR_TOP,34);
+ lv_obj_t *room=lv_tabview_add_tab(tabs,"POKOJ");
+ lv_obj_t *admin=lv_tabview_add_tab(tabs,"ADMIN");
  lv_obj_t *hardware=lv_tabview_add_tab(tabs,"TESTY");
  lv_obj_t *storage=lv_tabview_add_tab(tabs,"SD/WIFI");
- lv_obj_set_flex_flow(info,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(info,8,0);
+ makeThermostat(room);
+ makeAdmin(admin);
  lv_obj_set_flex_flow(hardware,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(hardware,8,0);
  lv_obj_set_flex_flow(storage,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(storage,8,0);
- statusLabel=label(info,"");batteryLabel=label(info,"");
  button(hardware,"RGB: zmien kolor",onLed);
  label(hardware,"Podswietlenie LCD:");
  lv_obj_t *slider=lv_slider_create(hardware);lv_obj_set_width(slider,195);
@@ -164,7 +254,7 @@ static void setupUI(){
  lv_obj_add_event_cb(slider,onBrightness,LV_EVENT_VALUE_CHANGED,nullptr);
  button(hardware,"Test glosnika 440 Hz",onTone);
  button(hardware,"Skanuj I2C -> USB",onI2c);
- label(hardware,"BOOT: wcisniecie widoczne w STATUS.");
+ label(hardware,"BOOT: odczyt w ADMIN.");
  button(storage,"Pokaz pliki microSD",onSd);sdLabel=label(storage,"Wloz karte i nacisnij przycisk.");
  button(storage,"Skanuj sieci Wi-Fi",onWifi);wifiLabel=label(storage,"Wi-Fi bez zapisanego hasla.");
  button(storage,"Skanuj Bluetooth LE",onBle);bleLabel=label(storage,"BLE nieaktywne do czasu testu.");
@@ -172,6 +262,10 @@ static void setupUI(){
 }
 void setup(){
  Serial.begin(115200);delay(500);
+ thermostatPrefs.begin("thermostat",false);
+ setPoint=constrain(thermostatPrefs.getFloat("target",21.0f),15.0f,30.0f);
+ hysteresis=constrain(thermostatPrefs.getFloat("hyst",0.5f),0.2f,2.0f);
+ heatingEnabled=thermostatPrefs.getBool("enabled",true);
  Serial.println("\nES3C28P LVGL Peripheral Lab");
  pinMode(BOOT_GPIO,INPUT_PULLUP);pinMode(AMP_EN,OUTPUT);digitalWrite(AMP_EN,HIGH);
  pixel.begin();pixel.clear();pixel.show();
