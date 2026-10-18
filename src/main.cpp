@@ -326,16 +326,17 @@ static void makeThermostat(lv_obj_t *tab){
  lv_obj_set_style_pad_row(card,5,0);
  lv_obj_t *subtitle=lv_label_create(card);
 #if DHT_GPIO >= 0
- lv_label_set_text(subtitle,"TEMPERATURA POKOJU / DHT");
+ lv_label_set_text(subtitle,"TEMPERATURA / DHT");
 #else
- lv_label_set_text(subtitle,"TEMPERATURA UKLADU / ESP32");
+ lv_label_set_text(subtitle,"TEMP. UKLADU ESP32");
 #endif
- lv_obj_set_style_text_color(subtitle,lv_color_hex(0xD1DCEC),0);
+ lv_obj_set_style_text_color(subtitle,lv_color_hex(0xFFFFFF),0);
+ lv_obj_set_style_text_font(subtitle,&lv_font_montserrat_16,0);
  roomLabel=lv_label_create(card);lv_label_set_text(roomLabel,"20.0°C");
  lv_obj_set_style_text_font(roomLabel,&lv_font_montserrat_28,0);
  lv_obj_set_style_text_color(roomLabel,lv_color_hex(0xF8FAFC),0);
  heatLabel=lv_label_create(card);lv_label_set_text(heatLabel,"GRZANIE: OFF");
- lv_obj_set_style_text_color(heatLabel,lv_color_hex(0x6EE7B7),0);
+ lv_obj_set_style_text_color(heatLabel,lv_color_hex(0xA5F3CE),0);
  lv_obj_t *set=lv_obj_create(tab);
  lv_obj_set_width(set,LV_PCT(100));lv_obj_set_height(set,82);
  lv_obj_set_style_radius(set,16,0);
@@ -434,7 +435,7 @@ void setup(){
  if(!drawmemA||!drawmemB){Serial.println("[fatal] No DMA draw buffers");while(true)delay(1000);}
  lvDisplay=lv_display_create(LCD_W,LCD_H);
  lv_display_set_color_format(lvDisplay,LV_COLOR_FORMAT_RGB565);
- lv_theme_t *darkTheme=lv_theme_default_init(lvDisplay,lv_color_hex(0x278DDA),lv_color_hex(0x42BFA9),true,&lv_font_montserrat_14);
+ lv_theme_t *darkTheme=lv_theme_default_init(lvDisplay,lv_color_hex(0x278DDA),lv_color_hex(0x42BFA9),true,&lv_font_montserrat_16);
  lv_display_set_theme(lvDisplay,darkTheme);
  lv_display_set_flush_cb(lvDisplay,flushCb);
  lv_display_set_buffers(lvDisplay,drawmemA,drawmemB,bufferBytes,LV_DISPLAY_RENDER_MODE_PARTIAL);
