@@ -443,6 +443,7 @@ static void makeAdmin(lv_obj_t *tab){
 #include "coprocessor.h"
 #include "gate_web.h"
 #include "ui_dashboard.h"
+#include "matter_thermostat.h"
 static void setupUI(){uiSetupDashboard();}
 
 void setup(){
@@ -507,6 +508,7 @@ void setup(){
  gateWebBegin();
  Serial.printf("[INIT] UI begin, heap=%u\\n",(unsigned)ESP.getFreeHeap());
  setupUI();
+ matterThermostatBegin();
  Serial.printf("[INIT] UI ready, heap=%u\\n",(unsigned)ESP.getFreeHeap());
 #ifdef ENABLE_COPROCESSOR_UART
  coproBegin();
@@ -514,7 +516,7 @@ void setup(){
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
 void loop(){
- audioService();coproService();cameraService();masterVolumeService();gateWebService();wifiAutoService();
+ audioService();coproService();cameraService();masterVolumeService();gateWebService();wifiAutoService();matterThermostatService();
 #if DHT_GPIO >= 0
  if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);temperatureValid=dhtOk;if(dhtOk)roomTemp=t;else heatingDemand=false;thermostatRefresh();}
 #else
