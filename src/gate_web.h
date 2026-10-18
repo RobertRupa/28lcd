@@ -90,7 +90,11 @@ static void gateWebBegin(){
   gateWebPassword=key;gatePrefs.putString("webpass",gateWebPassword);
   Serial.printf("[WEB] Pierwsze haslo admin: %s (zapisane NVS)\n",key);
  }
- Serial.println("[WEB] Administrator: admin");
+ Serial.println("[WEB] Administrator: adminx");
+ Serial.printf(
+    "[WEB] Login: admin | Haslo: %s\n",
+    gateWebPassword.c_str()
+);
  Serial.println("[WEB] Haslo administratora zapisane w NVS (nie jest wyswietlane)");
  Serial.println("[WEB] Panel WWW: http://<IP-ESP32>/");
  gateWeb.on("/",HTTP_GET,gatePage);
