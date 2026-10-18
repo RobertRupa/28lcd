@@ -121,7 +121,7 @@ static void doorbellSocketClose() {
 
 static bool doorbellSocketOpen() {
  int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
- if (fd < 0) { Serial.printf("[DOORBELL] socket failed: %d\\n", errno); return false; }
+ if (fd < 0) { Serial.printf("[DOORBELL] socket failed: %d\n", errno); return false; }
  int one = 1;
  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
  setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
@@ -130,20 +130,20 @@ static bool doorbellSocketOpen() {
  addr.sin_port = htons(DOORBELL_UDP_PORT);
  addr.sin_addr.s_addr = htonl(INADDR_ANY);
  if (bind(fd, (sockaddr*)&addr, sizeof(addr)) != 0) {
-  Serial.printf("[DOORBELL] bind failed: %d\\n", errno);
+  Serial.printf("[DOORBELL] bind failed: %d\n", errno);
   close(fd); return false;
  }
  ip_mreq group = {};
  group.imr_multiaddr.s_addr = inet_addr("239.255.0.1");
  group.imr_interface.s_addr = (uint32_t)WiFi.localIP();
  if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &group, sizeof(group)) != 0) {
-  Serial.printf("[DOORBELL] multicast join failed: %d (unicast/broadcast still active)\\n", errno);
+  Serial.printf("[DOORBELL] multicast join failed: %d (unicast/broadcast still active)\n", errno);
  }
  int flags = fcntl(fd, F_GETFL, 0);
  if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
  doorbellSocket = fd;
  doorbellBoundIP = WiFi.localIP();
- Serial.printf("[DOORBELL] Bound 0.0.0.0:%u | IP=%s | mask=%s | broadcast=%s | multicast=239.255.0.1\\n",
+ Serial.printf("[DOORBELL] Bound 0.0.0.0:%u | IP=%s | mask=%s | broadcast=%s | multicast=239.255.0.1\n",
   DOORBELL_UDP_PORT, WiFi.localIP().toString().c_str(),
   WiFi.subnetMask().toString().c_str(), WiFi.broadcastIP().toString().c_str());
  return true;
@@ -175,13 +175,13 @@ static void doorbellUdpService() {
                        (sockaddr*)&sender, &senderLength);
    if (size < 0) {
     if (errno != EAGAIN && errno != EWOULDBLOCK)
-     Serial.printf("[DOORBELL] recvfrom error: %d\\n", errno);
+     Serial.printf("[DOORBELL] recvfrom error: %d\n", errno);
     break;
    }
    if (size == 0) continue;
-   payload[size] = '\\0';
+   payload[size] = '\0';
    IPAddress source(ntohl(sender.sin_addr.s_addr));
-   Serial.printf("[DOORBELL] UDP from %s:%u, bytes=%d, data=%.63s\\n",
+   Serial.printf("[DOORBELL] UDP from %s:%u, bytes=%d, data=%.63s\n",
     source.toString().c_str(), ntohs(sender.sin_port), size, payload);
    uint32_t now = millis();
    if (!doorbellTriggeredBefore || now-doorbellLastTrigger >= DOORBELL_RETRIGGER_MS) {
