@@ -69,7 +69,8 @@ static bool touchRead(int32_t &x,int32_t &y){
 static void flushCb(lv_display_t *d,const lv_area_t *a,uint8_t *px){
  uint32_t w=a->x2-a->x1+1,h=a->y2-a->y1+1;
  lcd.startWrite();lcd.setAddrWindow(a->x1,a->y1,w,h);
- lv_draw_sw_rgb565_swap(px,w*h);lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_display_flush_ready(d);
+ // LovyanGFX handles RGB565 transfer ordering: do not byte-swap LVGL buffer.
+ lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_display_flush_ready(d);
 }
 static void inputCb(lv_indev_t*,lv_indev_data_t *d){
  int32_t x=0,y=0;
