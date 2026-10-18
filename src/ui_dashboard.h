@@ -192,7 +192,7 @@ static void uiCameraStart(lv_event_t *){
  String user=cameraPrefs.getString("user","");
  String pass=cameraPrefs.getString("pass","");
  if(!cameraStart(url,user.c_str(),pass.c_str())&&cameraStatusObject)
-  lv_label_set_text(cameraStatusObject,"Brak polaczenia: sprawdz Wi-Fi, MJPEG i login");
+  lv_label_set_text(cameraStatusObject,("Kamera: "+cameraLastError).c_str());
 }
 static void uiCameraStop(lv_event_t *){cameraStop();}
 static void uiMakeCamera(lv_obj_t *tab){
@@ -253,28 +253,28 @@ static void uiMakeRgb(lv_obj_t *tab){
  label(tab,"Wbudowany WS2812 na GPIO42.");
 }
 // Blade-style navigation: four readable actions rather than eight squeezed tabs.
-static lv_obj_t *bladePages[10]={};
+static lv_obj_t *bladePages[11]={};
 static lv_obj_t *bladeHint=nullptr;
 static uint8_t bladePage=0;
 static void bladeShow(uint8_t page){
- if(page>=10)return;
+ if(page>=11)return;
  bladePage=page;
- for(uint8_t i=0;i<10;i++){
+ for(uint8_t i=0;i<11;i++){
   if(bladePages[i]){
    if(i==page)lv_obj_remove_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
    else lv_obj_add_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
   }
  }
- static const char *pageNames[]={"DOM","RADIO","AUDIO","MENU","EKRAN","BATERIA","RGB","ADMIN","KAMERA","BRAMA"};
+ static const char *pageNames[]={"DOM","RADIO","AUDIO","MENU","EKRAN","BATERIA","RGB","ADMIN","KAMERA","BRAMA","ZEGAR"};
  if(bladeHint){
   char hint[88];
-  const uint8_t prev=(page+9)%10,next=(page+1)%10;
+  const uint8_t prev=(page+10)%11,next=(page+1)%11;
   snprintf(hint,sizeof(hint),"< %s  |  %s >",pageNames[prev],pageNames[next]);
   lv_label_set_text(bladeHint,hint);
  }
 }
 static void bladeNavigate(int8_t direction){
- bladeShow((uint8_t)((bladePage+10+(direction>0?1:-1))%10));
+ bladeShow((uint8_t)((bladePage+11+(direction>0?1:-1))%11));
 }
 static void bladeNavEvent(lv_event_t *e){bladeShow((uint8_t)(uintptr_t)lv_event_get_user_data(e));}
 static lv_obj_t *bladeButton(lv_obj_t *parent,const char *txt,uint8_t page){
@@ -343,6 +343,45 @@ static void uiMakeGate(lv_obj_t *tab){
  gateUiStatus=label(tab,"Konfiguracja URL: panel WWW, adres IP urzadzenia.");
  label(tab,"Przyciski aktywne po skonfigurowaniu osobnych URL GET.");
 }
+static lv_obj_t *clockHours=nullptr,*clockDate=nullptr,*clockNote=nullptr;
+static void clockRefresh(){
+ if(!clockHours)return;
+ struct tm now;
+ if(!getLocalTime(&now,20)||now.tm_year+1900<2025){
+  lv_label_set_text(clockHours,"--:--");
+  lv_label_set_text(clockDate,"Oczekiwanie na NTP");
+  lv_label_set_text(clockNote,WiFi.status()==WL_CONNECTED?"Synchronizacja czasu...":"Polacz Wi-Fi");
+  return;
+ }
+ char buf[70];strftime(buf,sizeof(buf),"%H:%M", &now);lv_label_set_text(clockHours,buf);
+ const char *days[]={"Niedziela","Poniedzialek","Wtorek","Sroda","Czwartek","Piatek","Sobota"};
+ const char *months[]={"stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","wrzesnia","pazdziernika","listopada","grudnia"};
+ snprintf(buf,sizeof(buf),"%s, %d %s %d",days[now.tm_wday],now.tm_mday,months[now.tm_mon],now.tm_year+1900);
+ lv_label_set_text(clockDate,buf);
+ lv_label_set_text(clockNote,"Europa/Warszawa  /  NTP");
+}
+static void uiMakeClock(lv_obj_t *page){
+ uiTab(page);
+ uiTitle(page,"ZEGAR","Czas synchronizowany przez Internet");
+ lv_obj_t *card=lv_obj_create(page);
+ lv_obj_set_size(card,214,166);
+ lv_obj_set_style_bg_color(card,lv_color_hex(0x152438),0);
+ lv_obj_set_style_border_width(card,1,0);
+ lv_obj_set_style_border_color(card,lv_color_hex(0x497DAB),0);
+ lv_obj_set_style_radius(card,18,0);
+ lv_obj_set_style_pad_all(card,12,0);
+ clockHours=lv_label_create(card);
+ lv_label_set_text(clockHours,"--:--");
+ lv_obj_set_style_text_font(clockHours,&lv_font_montserrat_28,0);
+ lv_obj_set_style_text_color(clockHours,lv_color_hex(0xFFFFFF),0);
+ lv_obj_align(clockHours,LV_ALIGN_TOP_MID,0,11);
+ clockDate=lv_label_create(card);lv_obj_set_width(clockDate,190);
+ lv_obj_set_style_text_align(clockDate,LV_TEXT_ALIGN_CENTER,0);
+ lv_obj_set_style_text_color(clockDate,lv_color_hex(0xE2E8F0),0);
+ lv_obj_align(clockDate,LV_ALIGN_CENTER,0,15);
+ clockNote=label(page,"Czekam na NTP...");
+ clockRefresh();
+}
 static void uiSetupDashboard(){
  lv_obj_t *root=lv_screen_active();
  lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1018),0);
@@ -352,8 +391,8 @@ static void uiSetupDashboard(){
  uiTab(bladePages[0]);makeThermostat(bladePages[0]);
  uiMakeWifi(bladePages[1]);uiMakeAudio(bladePages[2]);
  uiTab(bladePages[3]);uiTitle(bladePages[3],"MENU","Ustawienia i narzedzia");
- static const char *names[]={"EKRAN I DOTYK","BATERIA","RGB","ADMIN","KAMERA","BRAMA"};
- for(uint8_t i=0;i<5;i++){
+ static const char *names[]={"EKRAN I DOTYK","BATERIA","RGB","ADMIN","KAMERA","BRAMA","ZEGAR"};
+ for(uint8_t i=0;i<7;i++){
   lv_obj_t *b=bladeButton(bladePages[3],names[i],(uint8_t)(i+4));
   lv_obj_set_size(b,205,40);
   lv_obj_set_style_bg_color(b,lv_color_hex(0x1E3347),0);
@@ -364,6 +403,7 @@ static void uiSetupDashboard(){
  bladeSection(bladePages[7]);uiTab(bladePages[7]);makeAdmin(bladePages[7]);
  bladeSection(bladePages[8]);uiMakeCamera(bladePages[8]);
  uiMakeGate(bladePages[9]);
+ uiMakeClock(bladePages[10]);
  // Small directional preview only; no tab bar, no overlays on primary cards.
  bladeHint=lv_label_create(root);
  lv_obj_set_size(bladeHint,LCD_W-12,27);
