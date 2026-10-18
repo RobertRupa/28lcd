@@ -256,6 +256,9 @@ static void makeAdmin(lv_obj_t *tab){
  thermostatRefresh();
 }
 
+#include "audio_engine.h"
+#include "camera_engine.h"
+#include "coprocessor.h"
 #include "ui_dashboard.h"
 static void setupUI(){uiSetupDashboard();}
 
@@ -292,9 +295,13 @@ void setup(){
  const esp_timer_create_args_t args={.callback=&tick,.arg=nullptr,.dispatch_method=ESP_TIMER_TASK,.name="lv_tick",.skip_unhandled_events=true};
  esp_timer_handle_t th;esp_timer_create(&args,&th);esp_timer_start_periodic(th,1000);
  setupUI();
+#ifdef ENABLE_COPROCESSOR_UART
+ coproBegin();
+#endif
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
 void loop(){
+ audioService();coproService();cameraService();
 #if DHT_GPIO >= 0
  if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);if(dhtOk){roomTemp=t;thermostatRefresh();}else{heatingDemand=false;thermostatRefresh();}}
 #endif
