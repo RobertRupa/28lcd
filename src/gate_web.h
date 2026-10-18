@@ -73,6 +73,21 @@ static void gatePage(){
  page+=F("<section><h2>Termostat / Matter over Wi-Fi</h2><label>Nazwa urzadzenia<input name='matterName' maxlength='40' value='");
  page+=gateEsc(thermostatDeviceName);
  page+=F("'></label><p>Transport: Wi-Fi 2.4 GHz / IPv6</p><p>Matter: <strong>niezaimplementowany w tym firmware</strong></p><p>Kod parowania, QR, discriminator i otwarcie commissioning window beda dostepne dopiero po integracji ESP-Matter.</p><small>Nie wpisuj danych Thread ani kodow parowania recznie. Samo zapisanie tej nazwy nie tworzy urzadzenia Matter.</small></section>");
+ page+=F("<section><h2>Sterowanie termostatem</h2><label>Nastawa (15-30 C)<input name='targetTemp' type='number' min='15' max='30' step='0.1' value='");
+ page+=String(setPoint,1);
+ page+=F("'></label><label>Histereza (0.2-2.0 C)<input name='hyst' type='number' min='0.2' max='2' step='0.1' value='");
+ page+=String(hysteresis,1);
+ page+=F("'></label><label>Tryb <select name='heatEnabled'><option value='1'");
+ if(heatingEnabled)page+=F(" selected");
+ page+=F(">AUTO</option><option value='0'");
+ if(!heatingEnabled)page+=F(" selected");
+ page+=F(">OFF</option></select></label><h3>Kolor LED od nastawy</h3><small>Niebieski (dolny prog) do czerwonego (gorny prog)</small><label>Temperatura niebieska<input type='number' name='ledMin' min='0' max='40' step='0.5' value='");
+ page+=String(ledTempMin,1);
+ page+=F("'></label><label>Temperatura czerwona<input type='number' name='ledMax' min='1' max='50' step='0.5' value='");
+ page+=String(ledTempMax,1);
+ page+=F("'></label><label>Jasnosc LED 0-255<input type='number' name='ledBri' min='0' max='255' step='1' value='");
+ page+=String(ledBrightness);
+ page+=F("'></label><p>Bateria: napiecie orientacyjne z ADC GPIO9. Poziom procentowy i stan ladowania niedostepne bez kalibracji/hardware.</p></section>");
  page+=F("<section><h2>Administrator</h2><label>Nowe haslo WWW (puste = bez zmian)<input name='webPass' type='password' minlength='12' autocomplete='new-password'></label></section><button>Zapisz ustawienia</button></form><script>setInterval(async()=>{try{const r=await fetch('/status');if(r.ok){let j=await r.json();document.getElementById('status').textContent='Temp: '+j.temperature+' C ('+j.source+') / Grzanie: '+(j.heating?'TAK':'NIE')+' / Wi-Fi: '+j.ip;}}catch(e){}},2000)</script></html>");
  gateWeb.send(200,"text/html; charset=utf-8",page);
 }
@@ -83,6 +98,19 @@ static void gateSave(){
  for(int i=0;i<4;i++){newCam[i]=gateWeb.arg("cam"+String(i));newCam[i].trim();if(newCam[i].length()&&!gateCameraUrlAllowed(newCam[i])){gateWeb.send(400,"text/plain","Niedozwolony URL kamery");return;}}
  String newMatterName=gateWeb.arg("matterName");newMatterName.trim();
  if(newMatterName.isEmpty()||newMatterName.length()>40){gateWeb.send(400,"text/plain","Nazwa termostatu: 1-40 znakow");return;}
+ float target=gateWeb.arg("targetTemp").toFloat();
+ float hyst=gateWeb.arg("hyst").toFloat();
+ float minTemp=gateWeb.arg("ledMin").toFloat();
+ float maxTemp=gateWeb.arg("ledMax").toFloat();
+ int brightness=gateWeb.arg("ledBri").toInt();
+ String enabled=gateWeb.arg("heatEnabled");
+ if(!gateWeb.hasArg("targetTemp")||!gateWeb.hasArg("hyst")||!gateWeb.hasArg("ledMin")||
+    !gateWeb.hasArg("ledMax")||!gateWeb.hasArg("ledBri")||
+    !isfinite(target)||target<15||target>30||!isfinite(hyst)||hyst<0.2f||hyst>2.0f||
+    !isfinite(minTemp)||minTemp<0||minTemp>40||!isfinite(maxTemp)||maxTemp>50||
+    maxTemp-minTemp<0.5f||brightness<0||brightness>255||(enabled!="0"&&enabled!="1")){
+    gateWeb.send(400,"text/plain","Niepoprawne parametry termostatu lub LED");return;
+ }
  String newPassword=gateWeb.arg("webPass");
  if(newPassword.length()&&(newPassword.length()<12||newPassword.length()>64)){gateWeb.send(400,"text/plain","Haslo WWW musi miec 12-64 znakow");return;}
  for(int i=0;i<3;i++){gateUrls[i]=newGate[i];gatePrefs.putString(("gate"+String(i)).c_str(),gateUrls[i]);}
@@ -97,6 +125,21 @@ static void gateSave(){
  String ssid=gateWeb.arg("ssid"),pass=gateWeb.arg("wifiPass");
  if(ssid.length()<=32&&!ssid.isEmpty())wifiPrefs.putString("ssid",ssid);
  if(!pass.isEmpty()&&pass.length()<=63)wifiPrefs.putString("password",pass);
+ setPoint=target;hysteresis=hyst;heatingEnabled=(enabled=="1");
+ ledTempMin=minTemp;ledTempMax=maxTemp;ledBrightness=(uint8_t)brightness;
+ thermostatPrefs.putFloat("target",setPoint);
+ thermostatPrefs.putFloat("hyst",hysteresis);
+ thermostatPrefs.putBool("enabled",heatingEnabled);
+ thermostatPrefs.putFloat("ledMin",ledTempMin);
+ thermostatPrefs.putFloat("ledMax",ledTempMax);
+ thermostatPrefs.putUInt("ledBri",ledBrightness);
+ if(targetSlider)lv_slider_set_value(targetSlider,(int)roundf(setPoint*10),LV_ANIM_OFF);
+ if(hysteresisSlider)lv_slider_set_value(hysteresisSlider,(int)roundf(hysteresis*10),LV_ANIM_OFF);
+ if(heatSwitch) {
+   if(heatingEnabled)lv_obj_add_state(heatSwitch,LV_STATE_CHECKED);
+   else lv_obj_clear_state(heatSwitch,LV_STATE_CHECKED);
+ }
+ thermostatRefresh();
  thermostatDeviceName=newMatterName;gatePrefs.putString("mattername",thermostatDeviceName);
  if(newPassword.length()){gateWebPassword=newPassword;gatePrefs.putString("webpass",gateWebPassword);}
  gateWeb.sendHeader("Location","/");gateWeb.send(303,"text/plain","OK");
@@ -155,7 +198,14 @@ static void gateWebBegin(){
 #else
   const char *source="ESP32 die (not ambient)";
 #endif
-  String body="{\"temperature\":"+temp+",\"source\":\""+String(source)+"\",\"heating\":"+(heatingDemand?"true":"false")+",\"ip\":\""+WiFi.localIP().toString()+"\"}";
+  float volts=analogReadMilliVolts(BAT_ADC)*0.001f*BATTERY_DIVIDER_RATIO;
+  String body="{\"temperature\":"+temp+",\"source\":\""+String(source)+"\",\"heating\":"+(heatingDemand?"true":"false")+
+    ",\"target\":"+String(setPoint,1)+",\"hysteresis\":"+String(hysteresis,1)+
+    ",\"enabled\":"+(heatingEnabled?"true":"false")+
+    ",\"battery_voltage_estimate\":"+String(volts,2)+
+    ",\"battery_percent\":null,\"charging\":null,\"usb_power\":null"+
+    ",\"led_blue_temp\":"+String(ledTempMin,1)+",\"led_red_temp\":"+String(ledTempMax,1)+
+    ",\"ip\":\""+WiFi.localIP().toString()+"\"}";
   gateWeb.send(200,"application/json",body);
  });
  gateWeb.begin();gateWebReady=true;
