@@ -1,7 +1,12 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
+#ifndef ENABLE_28LCD_BLE_SCANNER
+#define ENABLE_28LCD_BLE_SCANNER 0
+#endif
+#if ENABLE_28LCD_BLE_SCANNER && !(defined(ENABLE_28LCD_MATTER) && ENABLE_28LCD_MATTER)
 #include <BLEDevice.h>
+#endif
 #include <SD_MMC.h>
 #include <lvgl.h>
 #include <esp_timer.h>
@@ -165,11 +170,15 @@ static void onWifi(lv_event_t*){
  Serial.println(out);
 }
 static void onBle(lv_event_t*){
- if(bleLabel)lv_label_set_text(bleLabel,"Skan BLE przez 3 sekundy...");
- #if defined(ENABLE_28LCD_MATTER) && ENABLE_28LCD_MATTER
+ #if !ENABLE_28LCD_BLE_SCANNER
+ if(bleLabel)lv_label_set_text(bleLabel,"Skaner Bluetooth wylaczony podczas kompilacji");
+ return;
+ #elif defined(ENABLE_28LCD_MATTER) && ENABLE_28LCD_MATTER
  if(bleLabel)lv_label_set_text(bleLabel,"BLE scan disabled: Matter owns commissioning BLE");
  return;
  #else
+ if(bleLabel)lv_label_set_text(bleLabel,"Skan BLE przez 3 sekundy...");
+
  BLEDevice::init("");
  BLEScan *scanner=BLEDevice::getScan();
  scanner->setActiveScan(true);
