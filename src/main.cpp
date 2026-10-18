@@ -153,7 +153,12 @@ static void onI2c(lv_event_t*){
 
 static Preferences thermostatPrefs;
 static float setPoint=21.0f;
-static float roomTemp=20.0f; // simulated unless DHT_GPIO >= 0
+// An internal die temperature is NOT ambient room temperature.
+static float roomTemp=NAN;
+static bool temperatureValid=false;
+#if DHT_GPIO < 0
+static uint32_t lastInternalTempRead=0;
+#endif
 #if DHT_GPIO >= 0
 static DHT dht(DHT_GPIO,DHT_SENSOR_TYPE);
 static uint32_t lastDhtRead=0;
@@ -166,16 +171,20 @@ static lv_obj_t *roomLabel=nullptr,*targetLabel=nullptr,*heatLabel=nullptr,*ther
 static lv_obj_t *targetSlider=nullptr,*simulationSlider=nullptr,*heatSwitch=nullptr,*hysteresisSlider=nullptr;
 
 static void thermostatRefresh(){
- bool sensorAvailable=true;
-#if DHT_GPIO >= 0
- sensorAvailable=dhtOk;
+ bool sensorAvailable=temperatureValid;
+#if DHT_GPIO < 0
+ sensorAvailable=false; // Chip temperature must NEVER drive room heating.
 #endif
  if(heatingEnabled && sensorAvailable){
   if(heatingDemand && roomTemp >= setPoint+hysteresis/2.0f) heatingDemand=false;
   else if(!heatingDemand && roomTemp <= setPoint-hysteresis/2.0f) heatingDemand=true;
  } else heatingDemand=false;
  char b[96];
- if(roomLabel){snprintf(b,sizeof(b),"%.1f°C",roomTemp);lv_label_set_text(roomLabel,b);}
+ if(roomLabel){
+  if(temperatureValid)snprintf(b,sizeof(b),"%.1f°C",roomTemp);
+  else snprintf(b,sizeof(b),"--.-°C");
+  lv_label_set_text(roomLabel,b);
+ }
  if(targetLabel){snprintf(b,sizeof(b),"Cel: %.1f°C",setPoint);lv_label_set_text(targetLabel,b);}
  if(heatLabel)lv_label_set_text(heatLabel,heatingDemand?"GRZANIE: ZADANE":"GRZANIE: OFF");
  if(adminLabel){snprintf(b,sizeof(b),"Histereza %.1f°C | %s\nTemperatura symulowana\nWyjscie przekaznika: NIEPRZYPISANE",hysteresis,heatingEnabled?"AUTO":"OFF");lv_label_set_text(adminLabel,b);}
@@ -188,7 +197,7 @@ static void onSimulation(lv_event_t *e){
 #if DHT_GPIO >= 0
  return; // Live sensor owns the temperature, simulation disabled.
 #endif
- roomTemp=lv_slider_get_value(lv_event_get_target(e))/10.0f;thermostatRefresh();
+ // Fallback sensor is read-only. No simulated room temperature.\n (void)e;
 }
 static void onHeatEnable(lv_event_t *e){
  heatingEnabled=lv_obj_has_state(lv_event_get_target(e),LV_STATE_CHECKED);
@@ -228,7 +237,11 @@ static void makeThermostat(lv_obj_t *tab){
  lv_obj_set_flex_flow(card,LV_FLEX_FLOW_COLUMN);
  lv_obj_set_style_pad_row(card,5,0);
  lv_obj_t *subtitle=lv_label_create(card);
- lv_label_set_text(subtitle,"TEMPERATURA");
+#if DHT_GPIO >= 0
+ lv_label_set_text(subtitle,"TEMPERATURA POKOJU / DHT");
+#else
+ lv_label_set_text(subtitle,"TEMPERATURA UKLADU / ESP32");
+#endif
  lv_obj_set_style_text_color(subtitle,lv_color_hex(0x9AACBE),0);
  roomLabel=lv_label_create(card);lv_label_set_text(roomLabel,"20.0°C");
  lv_obj_set_style_text_font(roomLabel,&lv_font_montserrat_28,0);
@@ -268,11 +281,12 @@ static void makeAdmin(lv_obj_t *tab){
  lv_slider_set_range(hysteresisSlider,2,20);
  lv_slider_set_value(hysteresisSlider,(int)(hysteresis*10),LV_ANIM_OFF);
  lv_obj_add_event_cb(hysteresisSlider,onHysteresis,LV_EVENT_VALUE_CHANGED,nullptr);
- label(tab,"Symulacja temperatury pomieszczenia (10-35 C):");
- simulationSlider=lv_slider_create(tab);lv_obj_set_width(simulationSlider,195);
- lv_slider_set_range(simulationSlider,100,350);
- lv_slider_set_value(simulationSlider,(int)(roomTemp*10),LV_ANIM_OFF);
- lv_obj_add_event_cb(simulationSlider,onSimulation,LV_EVENT_VALUE_CHANGED,nullptr);
+#if DHT_GPIO >= 0
+ label(tab,"Temperatura pochodzi z czujnika DHT");
+#else
+ label(tab,"Czujnik wewnetrzny ESP32-S3 mierzy nagrzanie ukladu, a nie pokoj.");
+ label(tab,"Tryb ogrzewania jest zablokowany bez DHT.");
+#endif
  adminLabel=label(tab,"");
  label(tab,"Ustawienia celu, histerezy i trybu sa zapisywane w NVS.");
  label(tab,"UWAGA: brak czujnika i wyjscia grzewczego. To panel demonstracyjny.");
@@ -297,6 +311,9 @@ void setup(){
  Serial.println("\nES3C28P LVGL Peripheral Lab");
 #if DHT_GPIO >= 0
  dht.begin();
+#else
+ roomTemp=temperatureRead();
+ temperatureValid=isfinite(roomTemp);
 #endif
  pinMode(BOOT_GPIO,INPUT_PULLUP);pinMode(AMP_EN,OUTPUT);digitalWrite(AMP_EN,HIGH);
  pixel.begin();pixel.clear();pixel.show();
@@ -336,7 +353,16 @@ void setup(){
 void loop(){
  audioService();coproService();cameraService();
 #if DHT_GPIO >= 0
- if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);if(dhtOk){roomTemp=t;thermostatRefresh();}else{heatingDemand=false;thermostatRefresh();}}
+ if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);temperatureValid=dhtOk;if(dhtOk)roomTemp=t;else heatingDemand=false;thermostatRefresh();}
+#else
+ if(millis()-lastInternalTempRead>=2000){
+  lastInternalTempRead=millis();
+  const float t=temperatureRead();
+  temperatureValid=isfinite(t)&&t>-40.0f&&t<125.0f;
+  if(temperatureValid)roomTemp=t;
+  heatingDemand=false;
+  thermostatRefresh();
+ }
 #endif
  lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
