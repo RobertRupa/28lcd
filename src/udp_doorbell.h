@@ -4,6 +4,7 @@
 // Any non-empty UDP datagram on port 61631 triggers the doorbell.
 // Keep all audio operations in the Arduino loop (not in a network callback).
 static constexpr uint16_t DOORBELL_UDP_PORT = 61631;
+static const IPAddress DOORBELL_MULTICAST_GROUP(239, 255, 0, 1);
 static WiFiUDP doorbellUdp;
 static bool doorbellBound = false;
 static bool doorbellToneActive = false;
@@ -116,9 +117,12 @@ static void doorbellUdpService() {
   return;
  }
  if (!doorbellBound) {
-  doorbellBound = doorbellUdp.begin(DOORBELL_UDP_PORT) != 0;
+  // Bind INADDR_ANY and join multicast: unicast, subnet broadcast, multicast.
+  doorbellBound = doorbellUdp.beginMulticast(DOORBELL_MULTICAST_GROUP, DOORBELL_UDP_PORT) != 0;
   if (doorbellBound)
-   Serial.printf("[DOORBELL] Listening UDP %s:%u\n", WiFi.localIP().toString().c_str(), DOORBELL_UDP_PORT);
+   Serial.printf("[DOORBELL] UDP %u: unicast %s, broadcast %s, multicast %s\n",
+    DOORBELL_UDP_PORT, WiFi.localIP().toString().c_str(),
+    WiFi.broadcastIP().toString().c_str(), DOORBELL_MULTICAST_GROUP.toString().c_str());
   else {
    static uint32_t lastError = 0;
    if (millis() - lastError > 5000) {
