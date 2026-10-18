@@ -34,3 +34,11 @@
 #ifndef BATTERY_DIVIDER_RATIO
 #define BATTERY_DIVIDER_RATIO 2.0f
 #endif
+
+// Optional DHT: set DHT_GPIO=2 and DHT_SENSOR_TYPE=DHT22 or DHT11.
+#ifndef DHT_GPIO
+#define DHT_GPIO -1
+#endif
+#ifndef DHT_SENSOR_TYPE
+#define DHT_SENSOR_TYPE 22
+#endif
