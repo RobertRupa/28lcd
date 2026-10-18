@@ -384,12 +384,20 @@ static void uiMakeClock(lv_obj_t *page){
 }
 static void uiSetupDashboard(){
  lv_obj_t *root=lv_screen_active();
+ if(!root){Serial.println("[FATAL] LVGL active screen is null");while(true)delay(1000);}
+ Serial.println("[INIT] Root screen OK");
  lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1018),0);
  lv_obj_set_style_border_width(root,0,0);
  lv_obj_set_style_pad_all(root,0,0);
- for(uint8_t i=0;i<11;i++)bladePages[i]=bladePageCreate(root);
+ for(uint8_t i=0;i<11;i++){
+  bladePages[i]=bladePageCreate(root);
+  if(!bladePages[i]){Serial.printf("[FATAL] Blade page %u alloc failed\\n",i);while(true)delay(1000);}
+ }
+ Serial.printf("[INIT] Blade pages allocated, heap=%u\\n",(unsigned)ESP.getFreeHeap());
+ Serial.println("[INIT] Building thermostat");
  uiTab(bladePages[0]);makeThermostat(bladePages[0]);
- uiMakeWifi(bladePages[1]);uiMakeAudio(bladePages[2]);
+ Serial.println("[INIT] Building WiFi");uiMakeWifi(bladePages[1]);
+ Serial.println("[INIT] Building audio");uiMakeAudio(bladePages[2]);
  uiTab(bladePages[3]);uiTitle(bladePages[3],"MENU","Ustawienia i narzedzia");
  static const char *names[]={"EKRAN I DOTYK","BATERIA","RGB","ADMIN","KAMERA","BRAMA","ZEGAR"};
  for(uint8_t i=0;i<7;i++){
@@ -401,9 +409,10 @@ static void uiSetupDashboard(){
  bladeSection(bladePages[5]);uiMakePower(bladePages[5]);
  bladeSection(bladePages[6]);uiMakeRgb(bladePages[6]);
  bladeSection(bladePages[7]);uiTab(bladePages[7]);makeAdmin(bladePages[7]);
+ Serial.println("[INIT] Building cameras");
  bladeSection(bladePages[8]);uiMakeCamera(bladePages[8]);
- uiMakeGate(bladePages[9]);
- uiMakeClock(bladePages[10]);
+ Serial.println("[INIT] Building gate");uiMakeGate(bladePages[9]);
+ Serial.println("[INIT] Building clock");uiMakeClock(bladePages[10]);
  // Small directional preview only; no tab bar, no overlays on primary cards.
  bladeHint=lv_label_create(root);
  lv_obj_set_size(bladeHint,LCD_W-12,27);
@@ -416,7 +425,9 @@ static void uiSetupDashboard(){
  lv_obj_set_style_radius(bladeHint,7,0);
  lv_obj_set_style_pad_top(bladeHint,4,0);
  bladeShow(0);
+ Serial.println("[INIT] Building FPS badge");
  fpsOverlay=lv_label_create(root);
+ if(!fpsOverlay){Serial.println("[FATAL] FPS label allocation failed");while(true)delay(1000);}
  lv_label_set_text(fpsOverlay,"0 FPS");
  lv_obj_set_pos(fpsOverlay,3,3);
  lv_obj_set_style_text_font(fpsOverlay,&lv_font_montserrat_14,0);
