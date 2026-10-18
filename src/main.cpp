@@ -260,6 +260,7 @@ static void makeAdmin(lv_obj_t *tab){
 #include "camera_engine.h"
 #include "coprocessor.h"
 #include "ui_dashboard.h"
+#include "web_config.h"
 static void setupUI(){uiSetupDashboard();}
 
 void setup(){
@@ -285,7 +286,7 @@ void setup(){
  // Shared with SDIO pins only, never configure them as GPIO elsewhere.
  SD_MMC.setPins(SD_CLK,SD_CMD,SD_D0,SD_D1,SD_D2,SD_D3);
  sdOk=SD_MMC.begin("/sdcard",false,false,20000,5);
- WiFi.mode(WIFI_OFF);
+ webConfigBegin();
  lv_init();
  drawmem=(lv_color_t*)heap_caps_malloc(LCD_W*24*sizeof(lv_color_t),MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
  if(!drawmem){Serial.println("[fatal] No DMA draw buffer");while(true)delay(1000);}
@@ -301,7 +302,7 @@ void setup(){
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
 void loop(){
- audioService();coproService();cameraService();
+ webConfigService();audioService();coproService();cameraService();
 #if DHT_GPIO >= 0
  if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);if(dhtOk){roomTemp=t;thermostatRefresh();}else{heatingDemand=false;thermostatRefresh();}}
 #endif
