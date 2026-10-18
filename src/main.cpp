@@ -11,18 +11,61 @@
 #include <math.h>
 #include <Preferences.h>
 #include <DHT.h>
+#include <time.h>
 #include "board_config.h"
 #include "display.h"
 
 static LGFX lcd;
 static Adafruit_NeoPixel pixel(1, RGB_GPIO, NEO_GRB + NEO_KHZ800);
-static lv_disp_draw_buf_t drawbuf;
-static lv_color_t *drawmem=nullptr;
+static uint8_t *drawmemA=nullptr,*drawmemB=nullptr;
+static lv_display_t *lvDisplay=nullptr;
 static bool touchOk=false,codecOk=false,sdOk=false;
 static uint32_t lastUpdate=0;
 static uint8_t ledColor=0;
 static lv_obj_t *statusLabel=nullptr,*sdLabel=nullptr,*wifiLabel=nullptr,*bleLabel=nullptr,*batteryLabel=nullptr;
 static bool sdBusy=false;
+static lv_obj_t *fpsOverlay=nullptr;
+static uint32_t fpsWindowAt=0;
+static uint16_t fpsFrameCount=0;
+static uint16_t fpsMeasured=0;
+static void fpsUpdate(){
+ uint32_t now=millis();
+ if(now-fpsWindowAt<1000)return;
+ uint32_t elapsed=now-fpsWindowAt;
+ fpsMeasured=(uint16_t)((1000UL*fpsFrameCount)/max((uint32_t)1,elapsed));
+ fpsFrameCount=0;fpsWindowAt=now;
+ if(fpsOverlay){char t[20];snprintf(t,sizeof(t),"%u FPS",fpsMeasured);lv_label_set_text(fpsOverlay,t);}
+}
+
+static Preferences wifiPrefs;
+static uint32_t wifiRetryAt=0;
+static bool ntpStarted=false;
+static void wifiAutoService(){
+ if(WiFi.status()==WL_CONNECTED){
+  if(!ntpStarted){configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3","pool.ntp.org","time.google.com");ntpStarted=true;Serial.println("[NTP] Sync requested");}
+  return;
+ }
+ if(millis()-wifiRetryAt<15000)return;
+ wifiRetryAt=millis();
+ String ssid=wifiPrefs.getString("ssid","");
+ if(ssid.length()){Serial.println("[WiFi] Connecting stored SSID");WiFi.mode(WIFI_STA);WiFi.begin(ssid.c_str(),wifiPrefs.getString("password","").c_str());}
+}
+
+static Preferences audioPrefs;
+static uint8_t masterVolume=35; // 0..100%; conservative default
+static uint8_t masterVolumePending=35;
+static uint32_t masterVolumeChangedAt=0;
+static bool masterVolumeDirty=false;
+static lv_obj_t *masterVolumeLabel=nullptr;
+
+static void bladeNavigate(int8_t direction);
+static int16_t swipeStartY=0,swipeStartX=0;
+static uint32_t swipeStartMs=0;
+static bool swipeTracking=false;
+static int16_t swipeLastY=0,swipeLastX=0;
+static int8_t swipePending=0;
+static int16_t edgePull=0;
+static void edgePullUpdate();
 
 static bool i2cPing(uint8_t addr){Wire.beginTransmission(addr);return Wire.endTransmission()==0;}
 static bool codecReg(uint8_t r,uint8_t v){Wire.beginTransmission(CODEC_ADDR);Wire.write(r);Wire.write(v);return Wire.endTransmission()==0;}
@@ -42,10 +85,10 @@ static void codecBegin(){
 static bool touchRead(int32_t &x,int32_t &y){
  if(!touchOk)return false;
  Wire.beginTransmission(TOUCH_ADDR);Wire.write(0x02);
- if(Wire.endTransmission(false)!=0||Wire.requestFrom(TOUCH_ADDR, (uint8_t)1)!=(uint8_t)1)return false;
+ if(Wire.endTransmission(false)!=0||Wire.requestFrom((uint8_t)TOUCH_ADDR, (uint8_t)1)!=(uint8_t)1)return false;
  uint8_t n=Wire.read() & 0x0F;if(n==0||n>2)return false;
  Wire.beginTransmission(TOUCH_ADDR);Wire.write(0x03);
- if(Wire.endTransmission(false)!=0||Wire.requestFrom(TOUCH_ADDR,(uint8_t)4)!=(uint8_t)4)return false;
+ if(Wire.endTransmission(false)!=0||Wire.requestFrom((uint8_t)TOUCH_ADDR,(uint8_t)4)!=(uint8_t)4)return false;
  uint8_t xh=Wire.read(),xl=Wire.read(),yh=Wire.read(),yl=Wire.read();
  int32_t rx=((xh & 0x0F)<<8)|xl,ry=((yh & 0x0F)<<8)|yl;
  // Same mirrored transform as the reference project.
@@ -53,21 +96,42 @@ static bool touchRead(int32_t &x,int32_t &y){
  y=constrain((int32_t)(LCD_H-1-ry),0,LCD_H-1);
  return true;
 }
-static void flushCb(lv_disp_drv_t *d,const lv_area_t *a,lv_color_t *px){
+static void flushCb(lv_display_t *d,const lv_area_t *a,uint8_t *px){
  uint32_t w=a->x2-a->x1+1,h=a->y2-a->y1+1;
  lcd.startWrite();lcd.setAddrWindow(a->x1,a->y1,w,h);
- lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_disp_flush_ready(d);
+ // LovyanGFX handles RGB565 transfer ordering: do not byte-swap LVGL buffer.
+ lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();
+ if(lv_display_flush_is_last(d))fpsFrameCount++;
+ lv_display_flush_ready(d);
 }
-static void inputCb(lv_indev_drv_t*,lv_indev_data_t *d){
- int32_t x=0,y=0;if(touchRead(x,y)){d->state=LV_INDEV_STATE_PRESSED;d->point.x=x;d->point.y=y;}
- else d->state=LV_INDEV_STATE_RELEASED;
+static void inputCb(lv_indev_t*,lv_indev_data_t *d){
+ int32_t x=0,y=0;
+ if(touchRead(x,y)){
+  d->state=LV_INDEV_STATE_PRESSED;d->point.x=x;d->point.y=y;
+  swipeLastX=x;swipeLastY=y;
+  if(swipeStartX<26 || swipeStartX>=LCD_W-26){
+   int delta=x-swipeStartX;
+   edgePull=(abs(delta)>8 && abs(delta)>abs(y-swipeStartY))?constrain(delta,-100,100):0;
+  }
+  if(!swipeTracking){swipeTracking=true;swipeStartX=x;swipeStartY=y;swipeStartMs=millis();}
+ }else{
+  d->state=LV_INDEV_STATE_RELEASED;
+  if(swipeTracking){
+   // A deliberate vertical gesture; horizontal sliders do not trigger navigation.
+   int32_t dx=swipeLastX-swipeStartX;
+   int32_t dy=swipeLastY-swipeStartY;
+   if(abs(dx)>65 && abs(dx)>abs(dy)*2 && millis()-swipeStartMs<1100)
+    swipePending=(dx<0)?1:-1;
+   swipeTracking=false;edgePull=0;
+  }
+ }
 }
 static void tick(void*){lv_tick_inc(1);}
 static lv_obj_t *label(lv_obj_t *parent,const char *text){
  lv_obj_t *o=lv_label_create(parent);lv_label_set_text(o,text);lv_label_set_long_mode(o,LV_LABEL_LONG_WRAP);lv_obj_set_width(o,205);return o;
 }
 static lv_obj_t *button(lv_obj_t *parent,const char *txt,lv_event_cb_t callback){
- lv_obj_t *b=lv_btn_create(parent);lv_obj_set_width(b,200);lv_obj_set_height(b,36);
+ lv_obj_t *b=lv_button_create(parent);lv_obj_set_width(b,200);lv_obj_set_height(b,36);
  lv_obj_add_event_cb(b,callback,LV_EVENT_CLICKED,nullptr);
  lv_obj_t *t=lv_label_create(b);lv_label_set_text(t,txt);lv_obj_center(t);return b;
 }
@@ -88,7 +152,7 @@ static void onLed(lv_event_t*){
  Serial.printf("[RGB] state=%u\n",ledColor);
 }
 static void onBrightness(lv_event_t *e){
- auto *s=lv_event_get_target(e);lcd.setBrightness(lv_slider_get_value(s));
+ auto *s=lv_event_get_target_obj(e);lcd.setBrightness(lv_slider_get_value(s));
 }
 static void onWifi(lv_event_t*){
  if(wifiLabel)lv_label_set_text(wifiLabel,"Skan Wi-Fi...");
@@ -141,19 +205,76 @@ static void onTone(lv_event_t*){
  if(i2s_set_pin(I2S_NUM_1,&pins)==ESP_OK){
   int16_t samples[512];float phase=0;const float delta=2.0f*PI*440/44100;
   for(int k=0;k<110;k++){for(int i=0;i<256;i++){int16_t s=(int16_t)(sinf(phase)*7000);
-   samples[2*i]=samples[2*i+1]=s;phase+=delta;if(phase>2*PI)phase-=2*PI;}
+   samples[2*i]=samples[2*i+1]=(int16_t)(s*((float)masterVolume/100.0f));phase+=delta;if(phase>2*PI)phase-=2*PI;}
    size_t sent=0;i2s_write(I2S_NUM_1,samples,sizeof(samples),&sent,portMAX_DELAY);}
  }
  i2s_zero_dma_buffer(I2S_NUM_1);i2s_driver_uninstall(I2S_NUM_1);
  digitalWrite(AMP_EN,HIGH);Serial.println("[audio] tone complete");
 }
+// Subtle three-note boot chime through ES8311; I2S is released afterwards.
+static void bootMelody(){
+ if(!codecOk)return;
+ i2s_config_t cfg={};
+ cfg.mode=(i2s_mode_t)(I2S_MODE_MASTER|I2S_MODE_TX);
+ cfg.sample_rate=22050;cfg.bits_per_sample=I2S_BITS_PER_SAMPLE_16BIT;
+ cfg.channel_format=I2S_CHANNEL_FMT_RIGHT_LEFT;
+ cfg.communication_format=I2S_COMM_FORMAT_STAND_I2S;
+ cfg.intr_alloc_flags=ESP_INTR_FLAG_LEVEL1;cfg.dma_buf_count=4;cfg.dma_buf_len=128;
+ cfg.use_apll=false;cfg.tx_desc_auto_clear=true;cfg.mclk_multiple=I2S_MCLK_MULTIPLE_256;
+ if(i2s_driver_install(I2S_NUM_1,&cfg,0,nullptr)!=ESP_OK)return;
+ i2s_pin_config_t pins={};
+ pins.mck_io_num=I2S_MCLK;pins.bck_io_num=I2S_BCLK;
+ pins.ws_io_num=I2S_WS;pins.data_out_num=I2S_DOUT;pins.data_in_num=I2S_PIN_NO_CHANGE;
+ if(i2s_set_pin(I2S_NUM_1,&pins)!=ESP_OK){i2s_driver_uninstall(I2S_NUM_1);return;}
+ static const uint16_t notes[]={523,659,784};
+ int16_t buf[256];float phase=0.0f;
+ digitalWrite(AMP_EN,LOW);
+ for(uint8_t n=0;n<3;n++){
+  const uint32_t frames=2205; // 100 ms per note
+  for(uint32_t pos=0;pos<frames;pos+=128){
+   const uint32_t count=min((uint32_t)128,frames-pos);
+   for(uint32_t i=0;i<count;i++){
+    float envelope=(float)min(pos+i,150U)/150.0f;
+    envelope*=min(1.0f,(float)(frames-pos-i)/200.0f);
+    int16_t sample=(int16_t)(sinf(phase)*2400.0f*envelope*((float)masterVolume/100.0f));
+    buf[2*i]=sample;buf[2*i+1]=sample;
+    phase+=2.0f*PI*notes[n]/22050.0f;
+    if(phase>2.0f*PI)phase-=2.0f*PI;
+   }
+   size_t written=0;i2s_write(I2S_NUM_1,buf,count*4,&written,portMAX_DELAY);
+  }
+ }
+ i2s_zero_dma_buffer(I2S_NUM_1);i2s_driver_uninstall(I2S_NUM_1);
+ digitalWrite(AMP_EN,HIGH);
+}
 static void onI2c(lv_event_t*){
  Serial.println("[I2C] scanning bus");for(int i=1;i<127;i++)if(i2cPing(i))Serial.printf("[I2C] 0x%02X\n",i);
 }
 
+static void audioApplyMasterVolume();
 static Preferences thermostatPrefs;
+static void masterVolumeService(){
+ if(masterVolumeDirty && millis()-masterVolumeChangedAt>=900){
+  audioPrefs.putUChar("master",masterVolumePending);
+  masterVolumeDirty=false;
+ }
+}
+static void masterVolumeChanged(lv_event_t *e){
+ masterVolume=(uint8_t)constrain((int)lv_slider_get_value(lv_event_get_target_obj(e)),0,100);
+ masterVolumePending=masterVolume;
+ audioApplyMasterVolume();
+ masterVolumeDirty=true;
+ masterVolumeChangedAt=millis();
+ if(masterVolumeLabel){char buf[28];snprintf(buf,sizeof(buf),"Glosnosc: %u%%",masterVolume);lv_label_set_text(masterVolumeLabel,buf);}
+}
+
 static float setPoint=21.0f;
-static float roomTemp=20.0f; // simulated unless DHT_GPIO >= 0
+// An internal die temperature is NOT ambient room temperature.
+static float roomTemp=NAN;
+static bool temperatureValid=false;
+#if DHT_GPIO < 0
+static uint32_t lastInternalTempRead=0;
+#endif
 #if DHT_GPIO >= 0
 static DHT dht(DHT_GPIO,DHT_SENSOR_TYPE);
 static uint32_t lastDhtRead=0;
@@ -166,36 +287,48 @@ static lv_obj_t *roomLabel=nullptr,*targetLabel=nullptr,*heatLabel=nullptr,*ther
 static lv_obj_t *targetSlider=nullptr,*simulationSlider=nullptr,*heatSwitch=nullptr,*hysteresisSlider=nullptr;
 
 static void thermostatRefresh(){
- bool sensorAvailable=true;
-#if DHT_GPIO >= 0
- sensorAvailable=dhtOk;
+ bool sensorAvailable=temperatureValid;
+#if DHT_GPIO < 0
+ sensorAvailable=false; // Chip temperature must NEVER drive room heating.
 #endif
  if(heatingEnabled && sensorAvailable){
   if(heatingDemand && roomTemp >= setPoint+hysteresis/2.0f) heatingDemand=false;
   else if(!heatingDemand && roomTemp <= setPoint-hysteresis/2.0f) heatingDemand=true;
  } else heatingDemand=false;
  char b[96];
- if(roomLabel){snprintf(b,sizeof(b),"%.1f°C",roomTemp);lv_label_set_text(roomLabel,b);}
+ if(roomLabel){
+  if(temperatureValid)snprintf(b,sizeof(b),"%.1f°C",roomTemp);
+  else snprintf(b,sizeof(b),"--.-°C");
+  lv_label_set_text(roomLabel,b);
+ }
  if(targetLabel){snprintf(b,sizeof(b),"Cel: %.1f°C",setPoint);lv_label_set_text(targetLabel,b);}
  if(heatLabel)lv_label_set_text(heatLabel,heatingDemand?"GRZANIE: ZADANE":"GRZANIE: OFF");
- if(adminLabel){snprintf(b,sizeof(b),"Histereza %.1f°C | %s\nTemperatura symulowana\nWyjscie przekaznika: NIEPRZYPISANE",hysteresis,heatingEnabled?"AUTO":"OFF");lv_label_set_text(adminLabel,b);}
+ if(adminLabel){
+#if DHT_GPIO >= 0
+ snprintf(b,sizeof(b),"Histereza %.1f C / %s\\nCzujnik DHT: %s\\nWyjscie: nieprzypisane",hysteresis,heatingEnabled?"AUTO":"OFF",temperatureValid?"OK":"BRAK");
+#else
+ snprintf(b,sizeof(b),"Histereza %.1f C / %s\\nTemperatura ukladu ESP32\\nOgrzewanie zablokowane bez DHT",hysteresis,heatingEnabled?"AUTO":"OFF");
+#endif
+ lv_label_set_text(adminLabel,b);
+}
 }
 static void onTarget(lv_event_t *e){
- setPoint=lv_slider_get_value(lv_event_get_target(e))/10.0f;
+ setPoint=lv_slider_get_value(lv_event_get_target_obj(e))/10.0f;
  thermostatPrefs.putFloat("target",setPoint);thermostatRefresh();
 }
 static void onSimulation(lv_event_t *e){
 #if DHT_GPIO >= 0
  return; // Live sensor owns the temperature, simulation disabled.
 #endif
- roomTemp=lv_slider_get_value(lv_event_get_target(e))/10.0f;thermostatRefresh();
+ // Fallback sensor is read-only. No simulated room temperature.
+ (void)e;
 }
 static void onHeatEnable(lv_event_t *e){
- heatingEnabled=lv_obj_has_state(lv_event_get_target(e),LV_STATE_CHECKED);
+ heatingEnabled=lv_obj_has_state(lv_event_get_target_obj(e),LV_STATE_CHECKED);
  thermostatPrefs.putBool("enabled",heatingEnabled);thermostatRefresh();
 }
 static void onHysteresis(lv_event_t *e){
- hysteresis=lv_slider_get_value(lv_event_get_target(e))/10.0f;
+ hysteresis=lv_slider_get_value(lv_event_get_target_obj(e))/10.0f;
  thermostatPrefs.putFloat("hyst",hysteresis);thermostatRefresh();
 }
 static lv_obj_t* makeHeading(lv_obj_t *parent,const char *str,uint8_t fontSize=0){
@@ -207,33 +340,69 @@ static lv_obj_t* makeHeading(lv_obj_t *parent,const char *str,uint8_t fontSize=0
  return o;
 }
 static void makeThermostat(lv_obj_t *tab){
- lv_obj_set_style_bg_color(tab,lv_color_hex(0x111827),0);
+ lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B101B),0);
  lv_obj_set_style_pad_all(tab,8,0);
+ lv_obj_set_style_pad_row(tab,8,0);
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);
  lv_obj_set_flex_align(tab,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
- makeHeading(tab,"TERMOSTAT POKOJOWY");
- makeHeading(tab,"TEMP. W POMIESZCZENIU");
- roomLabel=makeHeading(tab,"20.0°C");
+ lv_obj_t *head=lv_label_create(tab);
+ lv_label_set_text(head,"KLIMAT  /  SALON");
+ lv_obj_set_style_text_color(head,lv_color_hex(0x94A3B8),0);
+ lv_obj_set_style_text_font(head,&lv_font_montserrat_14,0);
+ lv_obj_t *card=lv_obj_create(tab);
+ lv_obj_set_width(card,LV_PCT(100));
+ lv_obj_set_height(card,128);
+ lv_obj_set_style_radius(card,18,0);
+ lv_obj_set_style_border_width(card,1,0);
+ lv_obj_set_style_border_color(card,lv_color_hex(0x26344A),0);
+ lv_obj_set_style_bg_color(card,lv_color_hex(0x172234),0);
+ lv_obj_set_style_pad_all(card,13,0);
+ lv_obj_clear_flag(card,LV_OBJ_FLAG_SCROLLABLE);
+ lv_obj_set_flex_flow(card,LV_FLEX_FLOW_COLUMN);
+ lv_obj_set_style_pad_row(card,5,0);
+ lv_obj_t *subtitle=lv_label_create(card);
+#if DHT_GPIO >= 0
+ lv_label_set_text(subtitle,"TEMPERATURA / DHT");
+#else
+ lv_label_set_text(subtitle,"TEMP. UKLADU ESP32");
+#endif
+ lv_obj_set_style_text_color(subtitle,lv_color_hex(0xFFFFFF),0);
+ lv_obj_set_style_text_font(subtitle,&lv_font_montserrat_16,0);
+ roomLabel=lv_label_create(card);lv_label_set_text(roomLabel,"20.0°C");
  lv_obj_set_style_text_font(roomLabel,&lv_font_montserrat_28,0);
- targetLabel=makeHeading(tab,"Cel: 21.0°C");
- targetSlider=lv_slider_create(tab);lv_obj_set_width(targetSlider,195);
+ lv_obj_set_style_text_color(roomLabel,lv_color_hex(0xF8FAFC),0);
+ heatLabel=lv_label_create(card);lv_label_set_text(heatLabel,"GRZANIE: OFF");
+ lv_obj_set_style_text_color(heatLabel,lv_color_hex(0xA5F3CE),0);
+ lv_obj_t *set=lv_obj_create(tab);
+ lv_obj_set_width(set,LV_PCT(100));lv_obj_set_height(set,82);
+ lv_obj_set_style_radius(set,16,0);
+ lv_obj_set_style_bg_color(set,lv_color_hex(0x172234),0);
+ lv_obj_set_style_border_width(set,0,0);
+ lv_obj_set_style_pad_all(set,10,0);
+ targetLabel=lv_label_create(set);lv_label_set_text(targetLabel,"Cel: 21.0°C");
+ lv_obj_set_style_text_color(targetLabel,lv_color_hex(0xE2E8F0),0);
+ targetSlider=lv_slider_create(set);
+ lv_obj_set_width(targetSlider,LV_PCT(100));
+ lv_obj_set_height(targetSlider,11);
+ lv_obj_align(targetSlider,LV_ALIGN_BOTTOM_MID,0,-7);
  lv_slider_set_range(targetSlider,150,300);
  lv_slider_set_value(targetSlider,(int)(setPoint*10),LV_ANIM_OFF);
+ lv_obj_set_style_bg_color(targetSlider,lv_color_hex(0x37465F),LV_PART_MAIN);
+ lv_obj_set_style_bg_color(targetSlider,lv_color_hex(0x38BDF8),LV_PART_INDICATOR);
+ lv_obj_set_style_bg_color(targetSlider,lv_color_hex(0xF8FAFC),LV_PART_KNOB);
  lv_obj_add_event_cb(targetSlider,onTarget,LV_EVENT_VALUE_CHANGED,nullptr);
- heatLabel=makeHeading(tab,"GRZANIE: OFF");
- thermoNote=makeHeading(tab,
-#if DHT_GPIO >= 0
- "Czujnik DHT GPIO2 (odczyt co 2.5s)"
-#else
- "DEMO - temperatura symulowana"
-#endif
- );
- lv_obj_set_style_text_color(thermoNote,lv_color_hex(0xFBBF24),0);
+ thermoNote=nullptr; // No demo overlay on the home screen.
  thermostatRefresh();
 }
 static void makeAdmin(lv_obj_t *tab){
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(tab,8,0);
  label(tab,"Panel administratora");
+ masterVolumeLabel=label(tab,"Glosnosc: 35%");
+ {char b[28];snprintf(b,sizeof(b),"Glosnosc: %u%%",masterVolume);lv_label_set_text(masterVolumeLabel,b);}
+ lv_obj_t *vol=lv_slider_create(tab);lv_obj_set_width(vol,195);lv_obj_set_height(vol,12);
+ lv_slider_set_range(vol,0,100);lv_slider_set_value(vol,masterVolume,LV_ANIM_OFF);
+ lv_obj_add_event_cb(vol,masterVolumeChanged,LV_EVENT_VALUE_CHANGED,nullptr);
+ label(tab,"Master volume: melodie, test tonu i WAV/MP3. Zapis automatyczny.");
  label(tab,"Termostat aktywny:");
  heatSwitch=lv_switch_create(tab);
  if(heatingEnabled)lv_obj_add_state(heatSwitch,LV_STATE_CHECKED);
@@ -243,11 +412,12 @@ static void makeAdmin(lv_obj_t *tab){
  lv_slider_set_range(hysteresisSlider,2,20);
  lv_slider_set_value(hysteresisSlider,(int)(hysteresis*10),LV_ANIM_OFF);
  lv_obj_add_event_cb(hysteresisSlider,onHysteresis,LV_EVENT_VALUE_CHANGED,nullptr);
- label(tab,"Symulacja temperatury pomieszczenia (10-35 C):");
- simulationSlider=lv_slider_create(tab);lv_obj_set_width(simulationSlider,195);
- lv_slider_set_range(simulationSlider,100,350);
- lv_slider_set_value(simulationSlider,(int)(roomTemp*10),LV_ANIM_OFF);
- lv_obj_add_event_cb(simulationSlider,onSimulation,LV_EVENT_VALUE_CHANGED,nullptr);
+#if DHT_GPIO >= 0
+ label(tab,"Temperatura pochodzi z czujnika DHT");
+#else
+ label(tab,"Czujnik wewnetrzny ESP32-S3 mierzy nagrzanie ukladu, a nie pokoj.");
+ label(tab,"Tryb ogrzewania jest zablokowany bez DHT.");
+#endif
  adminLabel=label(tab,"");
  label(tab,"Ustawienia celu, histerezy i trybu sa zapisywane w NVS.");
  label(tab,"UWAGA: brak czujnika i wyjscia grzewczego. To panel demonstracyjny.");
@@ -259,6 +429,7 @@ static void makeAdmin(lv_obj_t *tab){
 #include "audio_engine.h"
 #include "camera_engine.h"
 #include "coprocessor.h"
+#include "gate_web.h"
 #include "ui_dashboard.h"
 #include "web_config.h"
 static void setupUI(){uiSetupDashboard();}
@@ -266,6 +437,9 @@ static void setupUI(){uiSetupDashboard();}
 void setup(){
  Serial.begin(115200);delay(500);
  thermostatPrefs.begin("thermostat",false);
+ audioPrefs.begin("sound",false);
+ masterVolume=(uint8_t)constrain((int)audioPrefs.getUChar("master",35),0,100);
+ masterVolumePending=masterVolume;
  wifiPrefs.begin("wifi",false);
  setPoint=constrain(thermostatPrefs.getFloat("target",21.0f),15.0f,30.0f);
  hysteresis=constrain(thermostatPrefs.getFloat("hyst",0.5f),0.2f,2.0f);
@@ -273,6 +447,9 @@ void setup(){
  Serial.println("\nES3C28P LVGL Peripheral Lab");
 #if DHT_GPIO >= 0
  dht.begin();
+#else
+ roomTemp=temperatureRead();
+ temperatureValid=isfinite(roomTemp);
 #endif
  pinMode(BOOT_GPIO,INPUT_PULLUP);pinMode(AMP_EN,OUTPUT);digitalWrite(AMP_EN,HIGH);
  pixel.begin();pixel.clear();pixel.show();
@@ -282,31 +459,65 @@ void setup(){
  touchOk=i2cPing(TOUCH_ADDR);
  if(touchOk){Wire.beginTransmission(TOUCH_ADDR);Wire.write(0xA4);Wire.write(0x00);Wire.endTransmission();}
  codecBegin();
+ bootMelody();
  lcd.init();lcd.setRotation(0);lcd.setBrightness(160);lcd.fillScreen(TFT_BLACK);
  // Shared with SDIO pins only, never configure them as GPIO elsewhere.
  SD_MMC.setPins(SD_CLK,SD_CMD,SD_D0,SD_D1,SD_D2,SD_D3);
  sdOk=SD_MMC.begin("/sdcard",false,false,20000,5);
- webConfigBegin();
+ WiFi.mode(WIFI_STA);
+ WiFi.setAutoReconnect(true);
+ {String ssid=wifiPrefs.getString("ssid","");if(ssid.length()){WiFi.begin(ssid.c_str(),wifiPrefs.getString("password","").c_str());wifiRetryAt=millis();}}
  lv_init();
- drawmem=(lv_color_t*)heap_caps_malloc(LCD_W*24*sizeof(lv_color_t),MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
- if(!drawmem){Serial.println("[fatal] No DMA draw buffer");while(true)delay(1000);}
- lv_disp_draw_buf_init(&drawbuf,drawmem,nullptr,LCD_W*24);
- static lv_disp_drv_t dd;lv_disp_drv_init(&dd);dd.hor_res=LCD_W;dd.ver_res=LCD_H;dd.flush_cb=flushCb;dd.draw_buf=&drawbuf;lv_disp_drv_register(&dd);
- static lv_indev_drv_t id;lv_indev_drv_init(&id);id.type=LV_INDEV_TYPE_POINTER;id.read_cb=inputCb;lv_indev_drv_register(&id);
+ // Two 32-line internal DMA buffers. RGB565, partial redraw only.
+ constexpr uint32_t bufferBytes=LCD_W*32*2;
+ drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+ drawmemB=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+ if(!drawmemA||!drawmemB){Serial.println("[fatal] No DMA draw buffers");while(true)delay(1000);}
+ Serial.printf("[INIT] LVGL free heap=%u, psram=%u\\n",(unsigned)ESP.getFreeHeap(),(unsigned)ESP.getFreePsram());
+ lvDisplay=lv_display_create(LCD_W,LCD_H);
+ if(!lvDisplay){Serial.println("[FATAL] lv_display_create returned null");while(true)delay(1000);}
+ lv_display_set_color_format(lvDisplay,LV_COLOR_FORMAT_RGB565);
+ lv_theme_t *darkTheme=lv_theme_default_init(lvDisplay,lv_color_hex(0x278DDA),lv_color_hex(0x42BFA9),true,&lv_font_montserrat_16);
+ if(!darkTheme){Serial.println("[FATAL] lv_theme_default_init returned null");while(true)delay(1000);}
+ lv_display_set_theme(lvDisplay,darkTheme);
+ lv_display_set_flush_cb(lvDisplay,flushCb);
+ lv_display_set_buffers(lvDisplay,drawmemA,drawmemB,bufferBytes,LV_DISPLAY_RENDER_MODE_PARTIAL);
+ lv_indev_t *touch=lv_indev_create();
+ lv_indev_set_type(touch,LV_INDEV_TYPE_POINTER);
+ lv_indev_set_read_cb(touch,inputCb);
+ lv_indev_set_display(touch,lvDisplay);
  const esp_timer_create_args_t args={.callback=&tick,.arg=nullptr,.dispatch_method=ESP_TIMER_TASK,.name="lv_tick",.skip_unhandled_events=true};
  esp_timer_handle_t th;esp_timer_create(&args,&th);esp_timer_start_periodic(th,1000);
+ Serial.println("[INIT] Web begin");
+ gateWebBegin();
+ Serial.printf("[INIT] UI begin, heap=%u\\n",(unsigned)ESP.getFreeHeap());
  setupUI();
+ Serial.printf("[INIT] UI ready, heap=%u\\n",(unsigned)ESP.getFreeHeap());
 #ifdef ENABLE_COPROCESSOR_UART
  coproBegin();
 #endif
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
 void loop(){
- webConfigService();audioService();coproService();cameraService();
+ audioService();coproService();cameraService();masterVolumeService();gateWebService();wifiAutoService();
 #if DHT_GPIO >= 0
- if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);if(dhtOk){roomTemp=t;thermostatRefresh();}else{heatingDemand=false;thermostatRefresh();}}
+ if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);temperatureValid=dhtOk;if(dhtOk)roomTemp=t;else heatingDemand=false;thermostatRefresh();}
+#else
+ if(millis()-lastInternalTempRead>=2000){
+  lastInternalTempRead=millis();
+  const float t=temperatureRead();
+  temperatureValid=isfinite(t)&&t>-40.0f&&t<125.0f;
+  if(temperatureValid)roomTemp=t;
+  heatingDemand=false;
+  thermostatRefresh();
+ }
 #endif
- lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
+ lv_timer_handler();edgePullUpdate();fpsUpdate();
+ if(swipePending){int8_t direction=swipePending;swipePending=0;bladeNavigate(direction);}
+ if(millis()-lastUpdate>500){lastUpdate=millis();
+ if(bladePage==7)statusUpdate();
+ if(bladePage==5)uiPowerRefresh();
+ if(bladePage==10)clockRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
  char b[96];snprintf(b,sizeof(b),"BAT ADC: %d (szac. %.2f V*)",raw,voltage);
  if(batteryLabel)lv_label_set_text(batteryLabel,b);

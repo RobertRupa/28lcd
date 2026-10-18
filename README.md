@@ -157,3 +157,13 @@ Wykonywanie poleceń termostatu na zdalnym przekaźniku powinno wymagać ACK, wa
 ### Build validation
 - Added GitHub Actions workflow `.github/workflows/build.yml` for the S3 and coprocessor firmware.
 - No local PlatformIO toolchain or physical ES3C28P was available to validate the changes in this session. Verify status of the GitHub Actions run and test on hardware before merging PR #1.
+
+
+## LVGL 9 Modern Dark — gałąź feature/lvgl9-modern-dark
+
+- Migracja API LVGL 8 -> 9, 16-bit RGB565, podwójne bufory częściowego renderowania (po 32 wiersze, wewnętrzna RAM DMA), pasek zakładek u dołu.
+- Ekran DOM pokazuje temperaturę i nastawę w dwóch oddzielnych kartach. Brak nakładki DEMO i dodatkowego suwaka symulacji.
+- Bez skonfigurowanego DHT firmware używa `temperatureRead()` (wewnętrzny czujnik ESP32-S3), odświeżanie co 2 sekundy. **To temperatura krzemu/układu, a nie powietrza w pomieszczeniu.** Nie należy stosować jej do sterowania ogrzewaniem.
+- W trybie czujnika wewnętrznego logika zapotrzebowania na grzanie pozostaje OFF; dopiero prawidłowy pomiar z DHT może włączyć regulację logiczną. Nie jest przypisany fizyczny przekaźnik.
+- Aby używać DHT22: dodaj `-DDHT_GPIO=2` i `-DDHT_SENSOR_TYPE=22` do `build_flags`.
+- Kompilacja LVGL 9 jest sprawdzana w GitHub Actions. Przed wdrożeniem wymagany test na ekranie 240x320.

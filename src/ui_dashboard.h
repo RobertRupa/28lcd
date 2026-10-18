@@ -3,27 +3,32 @@
 static lv_obj_t *wifiSsidInput=nullptr,*wifiPassInput=nullptr,*wifiKeyboard=nullptr;
 static lv_obj_t *wifiConnectionLabel=nullptr,*powerInfoLabel=nullptr,*touchInfoLabel=nullptr;
 static lv_obj_t *audioInfoLabel=nullptr;
-static Preferences wifiPrefs;
+
 
 static void uiTitle(lv_obj_t *parent,const char *heading,const char *sub){
  lv_obj_t *h=lv_label_create(parent);lv_label_set_text(h,heading);
- lv_obj_set_width(h,210);lv_obj_set_style_text_font(h,&lv_font_montserrat_28,0);
+ lv_obj_set_width(h,210);lv_obj_set_style_text_font(h,&lv_font_montserrat_16,0);
  lv_obj_set_style_text_color(h,lv_color_hex(0xF8FAFC),0);
  lv_obj_t *s=lv_label_create(parent);lv_label_set_text(s,sub);
  lv_obj_set_width(s,210);lv_label_set_long_mode(s,LV_LABEL_LONG_WRAP);
- lv_obj_set_style_text_color(s,lv_color_hex(0x94A3B8),0);
+ lv_obj_set_style_text_color(s,lv_color_hex(0xE2E8F0),0);
 }
 static void uiTab(lv_obj_t *tab){
- lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B1220),0);
+ lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_bg_opa(tab,LV_OPA_COVER,0);
  lv_obj_set_style_pad_all(tab,10,0);
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);
  lv_obj_set_flex_align(tab,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
- lv_obj_set_style_pad_row(tab,11,0);
+ lv_obj_set_style_pad_row(tab,9,0);
+ lv_obj_set_style_text_font(tab,&lv_font_montserrat_16,0);
+ lv_obj_set_style_text_color(tab,lv_color_hex(0xF1F5F9),0);
 }
 static void uiOnKeyboard(lv_event_t *e){
- lv_obj_t *target=lv_event_get_target(e);
+ lv_obj_t *target=lv_event_get_target_obj(e);
  if(lv_event_get_code(e)==LV_EVENT_FOCUSED){
    lv_keyboard_set_textarea(wifiKeyboard,target);
+   lv_obj_move_foreground(wifiKeyboard);
+   lv_obj_scroll_to_view(target,LV_ANIM_OFF);
    lv_obj_clear_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
  } else if(lv_event_get_code(e)==LV_EVENT_DEFOCUSED){
    lv_obj_add_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
@@ -35,6 +40,14 @@ static void uiOnKeyboardDone(lv_event_t *e){
   lv_obj_clear_state(wifiSsidInput,LV_STATE_FOCUSED);
   lv_obj_clear_state(wifiPassInput,LV_STATE_FOCUSED);
  }
+}
+static void uiWifiReveal(lv_event_t *){
+ bool old=lv_textarea_get_password_mode(wifiPassInput);
+ if(!old && !lv_textarea_get_text(wifiPassInput)[0]){
+  String stored=wifiPrefs.getString("password","");
+  lv_textarea_set_text(wifiPassInput,stored.c_str());
+ }
+ lv_textarea_set_password_mode(wifiPassInput,!old);
 }
 static void uiWifiSave(lv_event_t *){
  const char *ssid=lv_textarea_get_text(wifiSsidInput);
@@ -112,6 +125,7 @@ static void uiMakeWifi(lv_obj_t *tab){
  lv_obj_add_event_cb(wifiPassInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
  String ssid=wifiPrefs.getString("ssid","");
  lv_textarea_set_text(wifiSsidInput,ssid.c_str());
+ button(tab,"Pokaz / ukryj haslo",uiWifiReveal);
  button(tab,"Zapisz i polacz",uiWifiSave);
  button(tab,"Polacz ponownie",uiWifiConnect);
  button(tab,"Usun zapisane Wi-Fi",uiWifiForget);
@@ -120,9 +134,16 @@ static void uiMakeWifi(lv_obj_t *tab){
  button(tab,"Skan Bluetooth LE",onBle);bleLabel=label(tab,"");
  label(tab,"ESP32-S3: Wi-Fi 2.4 GHz i BLE. Thread/Zigbee wymagaja zewnetrznego ESP32-C5/C6/H2 (RCP).");
  label(tab,"RCP: UART GPIO43 RX / GPIO44 TX wymaga przeniesienia logow UART0 na USB CDC i osobnego firmware.");
- wifiKeyboard=lv_keyboard_create(lv_scr_act());
- lv_obj_set_size(wifiKeyboard,LCD_W,150);lv_obj_align(wifiKeyboard,LV_ALIGN_BOTTOM_MID,0,0);
+ wifiKeyboard=lv_keyboard_create(lv_screen_active());
+ lv_obj_set_size(wifiKeyboard,LCD_W,218);lv_obj_align(wifiKeyboard,LV_ALIGN_BOTTOM_MID,0,0);
  lv_obj_add_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
+ lv_obj_set_style_pad_all(wifiKeyboard,3,0);
+ lv_obj_set_style_pad_row(wifiKeyboard,7,0);
+ lv_obj_set_style_pad_column(wifiKeyboard,2,0);
+ lv_obj_set_style_text_font(wifiKeyboard,&lv_font_montserrat_16,0);
+ lv_obj_set_style_bg_color(wifiKeyboard,lv_color_hex(0x101827),0);
+ lv_obj_set_style_bg_color(wifiKeyboard,lv_color_hex(0x33465B),LV_PART_ITEMS);
+ lv_obj_set_style_text_color(wifiKeyboard,lv_color_hex(0xFFFFFF),LV_PART_ITEMS);
  lv_obj_add_event_cb(wifiKeyboard,uiOnKeyboardDone,LV_EVENT_ALL,nullptr);
 }
 static void uiMakeAudio(lv_obj_t *tab){
@@ -137,23 +158,28 @@ static void uiMakeAudio(lv_obj_t *tab){
  audioInfoLabel=label(tab,"SD: wybierz plik lub nagraj /record.wav (10s)");
  uiAudioRefreshFiles(nullptr);
 }
-static lv_obj_t *cameraUrlInput=nullptr;
+static lv_obj_t *cameraSelector=nullptr;
+static uint8_t cameraIndex=0;
+static void uiCameraSelect(lv_event_t *){
+ cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
+ if(cameraStatusObject)lv_label_set_text_fmt(cameraStatusObject,"Kamera %u",cameraIndex+1);
+}
 static void uiCameraStart(lv_event_t *){
- if(!cameraStart(lv_textarea_get_text(cameraUrlInput))&&cameraStatusObject)
-  lv_label_set_text(cameraStatusObject,"Connection failed: check Wi-Fi and HTTP URL");
+ cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
+ if(!cameraStart(cameraUrls[cameraIndex].c_str(),cameraBasicUser[cameraIndex].c_str(),cameraBasicPass[cameraIndex].c_str())&&cameraStatusObject)
+  lv_label_set_text(cameraStatusObject,("Kamera: "+cameraLastError).c_str());
 }
 static void uiCameraStop(lv_event_t *){cameraStop();}
 static void uiMakeCamera(lv_obj_t *tab){
- uiTab(tab);uiTitle(tab,"CCTV","HTTP MJPEG / JPEG (240x180)");
- cameraUrlInput=lv_textarea_create(tab);lv_obj_set_width(cameraUrlInput,205);
- lv_textarea_set_one_line(cameraUrlInput,true);
- lv_textarea_set_placeholder_text(cameraUrlInput,"http://camera/mjpeg");
- lv_obj_add_event_cb(cameraUrlInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
- lv_obj_add_event_cb(cameraUrlInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
- button(tab,"Start stream",uiCameraStart);
- button(tab,"Stop stream",uiCameraStop);
- cameraStatusObject=label(tab,"Only plain HTTP; JPEG <=240x180");
- cameraImageObject=lv_img_create(tab);
+ uiTab(tab);uiTitle(tab,"KAMERY IP","Podglad; konfiguracja tylko WWW");
+ cameraSelector=lv_dropdown_create(tab);lv_obj_set_width(cameraSelector,205);
+ lv_dropdown_set_options(cameraSelector,"Kamera 1\nKamera 2\nKamera 3\nKamera 4");
+ lv_obj_add_event_cb(cameraSelector,uiCameraSelect,LV_EVENT_VALUE_CHANGED,nullptr);
+ button(tab,"Uruchom kamere",uiCameraStart);
+ button(tab,"Zatrzymaj",uiCameraStop);
+ cameraStatusObject=label(tab,"Wybierz kamere");
+ cameraImageObject=lv_image_create(tab);
+ label(tab,"URL i Basic Auth ustawiasz w panelu WWW.");
 }
 static void uiMakeDisplay(lv_obj_t *tab){
  uiTab(tab);uiTitle(tab,"DISPLAY","Ekran i dotyk");
@@ -162,7 +188,7 @@ static void uiMakeDisplay(lv_obj_t *tab){
  lv_slider_set_range(s,15,255);lv_slider_set_value(s,160,LV_ANIM_OFF);
  lv_obj_add_event_cb(s,onBrightness,LV_EVENT_VALUE_CHANGED,nullptr);
  touchInfoLabel=label(tab,"Dotknij pola ponizej");
- lv_obj_t *pad=lv_btn_create(tab);lv_obj_set_size(pad,200,115);
+ lv_obj_t *pad=lv_button_create(tab);lv_obj_set_size(pad,200,115);
  lv_obj_set_style_bg_color(pad,lv_color_hex(0x1D4ED8),0);
  lv_obj_add_event_cb(pad,uiTouchEvent,LV_EVENT_PRESSED,nullptr);
  lv_obj_add_event_cb(pad,uiTouchEvent,LV_EVENT_PRESSING,nullptr);
@@ -183,22 +209,244 @@ static void uiMakeRgb(lv_obj_t *tab){
  label(tab,"Sekwencja: off / czerwony / zielony / niebieski / bialy.");
  label(tab,"Wbudowany WS2812 na GPIO42.");
 }
+// Blade-style navigation: four readable actions rather than eight squeezed tabs.
+static lv_obj_t *bladePages[11]={};
+static lv_obj_t *bladeHint=nullptr;
+static lv_obj_t *edgePullVisual=nullptr;
+static int16_t edgePullShown=0;
+static void edgePullUpdate(){
+ if(!edgePullVisual)return;
+ int16_t delta=edgePull;
+ if(delta==edgePullShown)return;
+ edgePullShown=delta;
+ if(abs(delta)<8){lv_obj_add_flag(edgePullVisual,LV_OBJ_FLAG_HIDDEN);return;}
+ int16_t width=constrain(abs(delta)/2+5,10,58);
+ lv_obj_set_size(edgePullVisual,width,LCD_H-38);
+ lv_obj_set_pos(edgePullVisual,delta>0?0:LCD_W-width,0);
+ lv_obj_set_style_bg_color(edgePullVisual,lv_color_hex(0x3E9FDB),0);
+ lv_obj_set_style_bg_opa(edgePullVisual,(lv_opa_t)constrain(55+abs(delta),60,160),0);
+ lv_obj_remove_flag(edgePullVisual,LV_OBJ_FLAG_HIDDEN);
+ lv_obj_move_foreground(edgePullVisual);
+ if(fpsOverlay)lv_obj_move_foreground(fpsOverlay);
+}
+
+static uint8_t bladePage=0;
+static bool bladeAnimating=false;
+static void bladeAnimDone(lv_anim_t *a){
+ lv_obj_t *old=(lv_obj_t*)lv_anim_get_user_data(a);
+ if(old){lv_obj_add_flag(old,LV_OBJ_FLAG_HIDDEN);lv_obj_set_x(old,0);}
+ bladeAnimating=false;
+}
+static void bladeSetX(void *obj,int32_t x){lv_obj_set_x((lv_obj_t*)obj,x);}
+
+static void bladeShow(uint8_t page){
+ if(page>=11)return;
+ bladePage=page;
+ for(uint8_t i=0;i<11;i++){
+  if(bladePages[i]){
+   if(i==page)lv_obj_remove_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
+   else lv_obj_add_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
+  }
+ }
+ static const char *pageNames[]={"DOM","RADIO","AUDIO","MENU","EKRAN","BATERIA","RGB","ADMIN","KAMERA","BRAMA","ZEGAR"};
+ if(bladeHint){
+  char hint[88];
+  const uint8_t prev=(page+10)%11,next=(page+1)%11;
+  snprintf(hint,sizeof(hint),"< %s  |  %s >",pageNames[prev],pageNames[next]);
+  lv_label_set_text(bladeHint,hint);
+ }
+}
+static void bladeNavigate(int8_t direction){
+ if(bladeAnimating||direction==0)return;
+ uint8_t oldIndex=bladePage;
+ uint8_t next=(uint8_t)((bladePage+11+(direction>0?1:-1))%11);
+ lv_obj_t *old=bladePages[oldIndex],*incoming=bladePages[next];
+ if(!old||!incoming)return;
+ bladeAnimating=true;
+ // Move content horizontally while keeping bottom navigation hint stationary.
+ lv_obj_remove_flag(incoming,LV_OBJ_FLAG_HIDDEN);
+ lv_obj_set_x(incoming,direction>0?LCD_W:-LCD_W);
+ lv_obj_move_foreground(incoming);
+ lv_anim_t in;lv_anim_init(&in);
+ lv_anim_set_var(&in,incoming);lv_anim_set_exec_cb(&in,bladeSetX);
+ lv_anim_set_values(&in,direction>0?LCD_W:-LCD_W,0);
+ lv_anim_set_time(&in,190);lv_anim_set_path_cb(&in,lv_anim_path_ease_out);
+ lv_anim_start(&in);
+ lv_anim_t out;lv_anim_init(&out);
+ lv_anim_set_var(&out,old);lv_anim_set_exec_cb(&out,bladeSetX);
+ lv_anim_set_values(&out,0,direction>0?-LCD_W:LCD_W);
+ lv_anim_set_time(&out,190);lv_anim_set_path_cb(&out,lv_anim_path_ease_out);
+ lv_anim_set_user_data(&out,old);lv_anim_set_completed_cb(&out,bladeAnimDone);
+ lv_anim_start(&out);
+ // Updates the next/previous navigation preview and current active page.
+ bladePage=next;
+ static const char *pageNames[]={"DOM","RADIO","AUDIO","MENU","EKRAN","BATERIA","RGB","ADMIN","KAMERA","BRAMA","ZEGAR"};
+ if(bladeHint){char hint[80];snprintf(hint,sizeof(hint),"< %s  |  %s >",pageNames[(next+10)%11],pageNames[(next+1)%11]);lv_label_set_text(bladeHint,hint);}
+ if(fpsOverlay)lv_obj_move_foreground(fpsOverlay);
+ if(bladeHint)lv_obj_move_foreground(bladeHint);
+}
+static void bladeNavEvent(lv_event_t *e){bladeShow((uint8_t)(uintptr_t)lv_event_get_user_data(e));}
+static lv_obj_t *bladeButton(lv_obj_t *parent,const char *txt,uint8_t page){
+ lv_obj_t *b=lv_button_create(parent);
+ lv_obj_set_style_radius(b,10,0);
+ lv_obj_set_style_border_width(b,0,0);
+ lv_obj_set_style_shadow_width(b,0,0);
+ lv_obj_add_event_cb(b,bladeNavEvent,LV_EVENT_CLICKED,(void*)(uintptr_t)page);
+ lv_obj_t *t=lv_label_create(b);lv_label_set_text(t,txt);
+ lv_obj_set_style_text_font(t,&lv_font_montserrat_14,0);
+ lv_obj_center(t);
+ return b;
+}
+static lv_obj_t *bladePageCreate(lv_obj_t *root){
+ lv_obj_t *p=lv_obj_create(root);
+ lv_obj_set_pos(p,0,0);lv_obj_set_size(p,LCD_W,LCD_H-35);
+ lv_obj_set_style_bg_color(p,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_border_width(p,0,0);
+ lv_obj_set_style_radius(p,0,0);
+ lv_obj_set_style_pad_all(p,0,0);
+ lv_obj_set_scroll_dir(p,LV_DIR_VER);
+ return p;
+}
+static void bladeSection(lv_obj_t *page){
+ lv_obj_t *back=bladeButton(page,"<  MENU",3);
+ lv_obj_set_size(back,185,39);
+ lv_obj_set_style_bg_color(back,lv_color_hex(0x263B50),0);
+}
+static lv_obj_t *gateUiStatus=nullptr;
+static void gateUiAction(lv_event_t *e){
+ uint8_t id=(uint8_t)(uintptr_t)lv_event_get_user_data(e);
+ String result;bool ok=gateRequest(id,result);
+ if(gateUiStatus)lv_label_set_text(gateUiStatus,(String(ok?"Wyslano: ":"Blad: ")+result).c_str());
+}
+static void gateUiConfirm(lv_event_t *e){
+ uint8_t id=(uint8_t)(uintptr_t)lv_event_get_user_data(e);
+ lv_obj_t *modal=lv_obj_create(lv_screen_active());
+ lv_obj_set_size(modal,218,146);lv_obj_center(modal);
+ lv_obj_set_style_bg_color(modal,lv_color_hex(0x182536),0);
+ lv_obj_set_style_text_color(modal,lv_color_hex(0xFFFFFF),0);
+ lv_obj_set_style_border_color(modal,lv_color_hex(0x5DA7E1),0);
+ lv_obj_t *question=lv_label_create(modal);
+ lv_label_set_text_fmt(question,"Potwierdz: %s?",gateNames[id]);
+ lv_obj_align(question,LV_ALIGN_TOP_MID,0,4);
+ lv_obj_t *yes=lv_button_create(modal);lv_obj_set_size(yes,80,46);
+ lv_obj_align(yes,LV_ALIGN_BOTTOM_LEFT,0,0);
+ lv_obj_t *yt=lv_label_create(yes);lv_label_set_text(yt,"OTWORZ");lv_obj_center(yt);
+ lv_obj_add_event_cb(yes,gateUiAction,LV_EVENT_CLICKED,(void*)(uintptr_t)id);
+ lv_obj_add_event_cb(yes,[](lv_event_t *e){lv_obj_delete((lv_obj_t*)lv_event_get_user_data(e));},LV_EVENT_CLICKED,modal);
+ lv_obj_t *no=lv_button_create(modal);lv_obj_set_size(no,80,46);
+ lv_obj_align(no,LV_ALIGN_BOTTOM_RIGHT,0,0);
+ lv_obj_t *nt=lv_label_create(no);lv_label_set_text(nt,"ANULUJ");lv_obj_center(nt);
+ lv_obj_add_event_cb(no,[](lv_event_t *e){lv_obj_delete((lv_obj_t*)lv_event_get_user_data(e));},LV_EVENT_CLICKED,modal);
+}
+static void uiMakeGate(lv_obj_t *tab){
+ uiTab(tab);uiTitle(tab,"BRAMA","Sterowanie przez Wi-Fi (HTTP GET)");
+ static const char *titles[]={"OTWORZ 1/2","OTWORZ CALA","OTWORZ FURTKE"};
+ for(uint8_t i=0;i<3;i++){
+  lv_obj_t *b=button(tab,titles[i],gateUiConfirm);
+  lv_obj_set_height(b,51);
+  lv_obj_set_style_bg_color(b,lv_color_hex(i==2?0x245D56:0x23517D),0);
+  // button() attaches an earlier callback without user data; replace it.
+  lv_obj_remove_event_cb(b,gateUiConfirm);
+  lv_obj_add_event_cb(b,gateUiConfirm,LV_EVENT_CLICKED,(void*)(uintptr_t)i);
+ }
+ gateUiStatus=label(tab,"Konfiguracja URL: panel WWW, adres IP urzadzenia.");
+ label(tab,"Przyciski aktywne po skonfigurowaniu osobnych URL GET.");
+}
+static lv_obj_t *clockHours=nullptr,*clockDate=nullptr,*clockNote=nullptr;
+static void clockRefresh(){
+ if(!clockHours)return;
+ struct tm now;
+ if(!getLocalTime(&now,20)||now.tm_year+1900<2025){
+  lv_label_set_text(clockHours,"--:--");
+  lv_label_set_text(clockDate,"Oczekiwanie na NTP");
+  lv_label_set_text(clockNote,WiFi.status()==WL_CONNECTED?"Synchronizacja czasu...":"Polacz Wi-Fi");
+  return;
+ }
+ char buf[70];strftime(buf,sizeof(buf),"%H:%M", &now);lv_label_set_text(clockHours,buf);
+ const char *days[]={"Niedziela","Poniedzialek","Wtorek","Sroda","Czwartek","Piatek","Sobota"};
+ const char *months[]={"stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","wrzesnia","pazdziernika","listopada","grudnia"};
+ snprintf(buf,sizeof(buf),"%s, %d %s %d",days[now.tm_wday],now.tm_mday,months[now.tm_mon],now.tm_year+1900);
+ lv_label_set_text(clockDate,buf);
+ lv_label_set_text(clockNote,"Europa/Warszawa  /  NTP");
+}
+static void uiMakeClock(lv_obj_t *page){
+ uiTab(page);
+ uiTitle(page,"ZEGAR","Czas synchronizowany przez Internet");
+ lv_obj_t *card=lv_obj_create(page);
+ lv_obj_set_size(card,214,166);
+ lv_obj_set_style_bg_color(card,lv_color_hex(0x152438),0);
+ lv_obj_set_style_border_width(card,1,0);
+ lv_obj_set_style_border_color(card,lv_color_hex(0x497DAB),0);
+ lv_obj_set_style_radius(card,18,0);
+ lv_obj_set_style_pad_all(card,12,0);
+ clockHours=lv_label_create(card);
+ lv_label_set_text(clockHours,"--:--");
+ lv_obj_set_style_text_font(clockHours,&lv_font_montserrat_28,0);
+ lv_obj_set_style_text_color(clockHours,lv_color_hex(0xFFFFFF),0);
+ lv_obj_align(clockHours,LV_ALIGN_TOP_MID,0,11);
+ clockDate=lv_label_create(card);lv_obj_set_width(clockDate,190);
+ lv_obj_set_style_text_align(clockDate,LV_TEXT_ALIGN_CENTER,0);
+ lv_obj_set_style_text_color(clockDate,lv_color_hex(0xE2E8F0),0);
+ lv_obj_align(clockDate,LV_ALIGN_CENTER,0,15);
+ clockNote=label(page,"Czekam na NTP...");
+ clockRefresh();
+}
 static void uiSetupDashboard(){
- lv_obj_t *root=lv_scr_act();
- lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1220),0);
- lv_obj_t *tabs=lv_tabview_create(root,LV_DIR_TOP,40);
- lv_obj_set_style_bg_color(lv_tabview_get_tab_btns(tabs),lv_color_hex(0x111827),0);
- lv_obj_t *thermo=lv_tabview_add_tab(tabs,"DOM");
- lv_obj_t *radio=lv_tabview_add_tab(tabs,"RADIO");
- lv_obj_t *audio=lv_tabview_add_tab(tabs,"AUDIO");
- lv_obj_t *screen=lv_tabview_add_tab(tabs,"LCD");
- lv_obj_t *power=lv_tabview_add_tab(tabs,"BAT");
- lv_obj_t *rgb=lv_tabview_add_tab(tabs,"RGB");
- lv_obj_t *admin=lv_tabview_add_tab(tabs,"ADMIN");
- lv_obj_t *camera=lv_tabview_add_tab(tabs,"CCTV");
- uiTab(thermo);makeThermostat(thermo);
- uiMakeWifi(radio);uiMakeAudio(audio);uiMakeDisplay(screen);uiMakePower(power);uiMakeRgb(rgb);
- uiTab(admin);makeAdmin(admin);uiMakeCamera(camera);
+ lv_obj_t *root=lv_screen_active();
+ if(!root){Serial.println("[FATAL] LVGL active screen is null");while(true)delay(1000);}
+ Serial.println("[INIT] Root screen OK");
+ lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_border_width(root,0,0);
+ lv_obj_set_style_pad_all(root,0,0);
+ for(uint8_t i=0;i<11;i++){
+  bladePages[i]=bladePageCreate(root);
+  if(!bladePages[i]){Serial.printf("[FATAL] Blade page %u alloc failed\\n",i);while(true)delay(1000);}
+ }
+ Serial.printf("[INIT] Blade pages allocated, heap=%u\\n",(unsigned)ESP.getFreeHeap());
+ Serial.println("[INIT] Building thermostat");
+ uiTab(bladePages[0]);makeThermostat(bladePages[0]);
+ Serial.println("[INIT] Building WiFi");uiMakeWifi(bladePages[1]);
+ Serial.println("[INIT] Building audio");uiMakeAudio(bladePages[2]);
+ uiTab(bladePages[3]);uiTitle(bladePages[3],"MENU","Ustawienia i narzedzia");
+ static const char *names[]={"EKRAN I DOTYK","BATERIA","RGB","ADMIN","KAMERA","BRAMA","ZEGAR"};
+ for(uint8_t i=0;i<7;i++){
+  lv_obj_t *b=bladeButton(bladePages[3],names[i],(uint8_t)(i+4));
+  lv_obj_set_size(b,205,40);
+  lv_obj_set_style_bg_color(b,lv_color_hex(0x1E3347),0);
+ }
+ bladeSection(bladePages[4]);uiMakeDisplay(bladePages[4]);
+ bladeSection(bladePages[5]);uiMakePower(bladePages[5]);
+ bladeSection(bladePages[6]);uiMakeRgb(bladePages[6]);
+ bladeSection(bladePages[7]);uiTab(bladePages[7]);makeAdmin(bladePages[7]);
+ Serial.println("[INIT] Building cameras");
+ bladeSection(bladePages[8]);uiMakeCamera(bladePages[8]);
+ Serial.println("[INIT] Building gate");uiMakeGate(bladePages[9]);
+ Serial.println("[INIT] Building clock");uiMakeClock(bladePages[10]);
+ // Small directional preview only; no tab bar, no overlays on primary cards.
+ bladeHint=lv_label_create(root);
+ lv_obj_set_size(bladeHint,LCD_W-12,27);
+ lv_obj_align(bladeHint,LV_ALIGN_BOTTOM_MID,0,-3);
+ lv_obj_set_style_text_align(bladeHint,LV_TEXT_ALIGN_CENTER,0);
+ lv_obj_set_style_text_color(bladeHint,lv_color_hex(0xE9F2FF),0);
+ lv_obj_set_style_text_font(bladeHint,&lv_font_montserrat_14,0);
+ lv_obj_set_style_bg_color(bladeHint,lv_color_hex(0x1A2A3B),0);
+ lv_obj_set_style_bg_opa(bladeHint,LV_OPA_COVER,0);
+ lv_obj_set_style_radius(bladeHint,7,0);
+ lv_obj_set_style_pad_top(bladeHint,4,0);
+ bladeShow(0);
+ Serial.println("[INIT] Building FPS badge");
+ fpsOverlay=lv_label_create(root);
+ if(!fpsOverlay){Serial.println("[FATAL] FPS label allocation failed");while(true)delay(1000);}
+ lv_label_set_text(fpsOverlay,"0 FPS");
+ lv_obj_set_pos(fpsOverlay,3,3);
+ lv_obj_set_style_text_font(fpsOverlay,&lv_font_montserrat_14,0);
+ lv_obj_set_style_text_color(fpsOverlay,lv_color_hex(0xFFFFFF),0);
+ lv_obj_set_style_bg_color(fpsOverlay,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_bg_opa(fpsOverlay,LV_OPA_COVER,0);
+ lv_obj_set_style_radius(fpsOverlay,5,0);
+ lv_obj_set_style_pad_all(fpsOverlay,3,0);
+ lv_obj_remove_flag(fpsOverlay,LV_OBJ_FLAG_CLICKABLE);
+ lv_obj_move_foreground(fpsOverlay);
  statusUpdate();
 }
 static void uiPowerRefresh(){

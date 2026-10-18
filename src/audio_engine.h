@@ -55,6 +55,9 @@ static uint32_t audioRecordStart=0;
 static const uint32_t audioRecordMaxMs=10000;
 static char audioMessage[128]="Ready";
 
+static void audioApplyMasterVolume(){
+ if(audioOutput)audioOutput->SetGain(0.25f*((float)masterVolume/100.0f));
+}
 static void audioStop(){
  if(mp3){mp3->stop();delete mp3;mp3=nullptr;}
  if(wav){wav->stop();delete wav;wav=nullptr;}
@@ -67,7 +70,7 @@ static bool audioPlayFile(const char *path){
  audioStop();
  audioSource=new AudioFileSourceFS(SD_MMC,path);
  audioOutput=new CodecI2SOutput();
- audioOutput->SetGain(0.25f);
+ audioOutput->SetGain(0.25f*((float)masterVolume/100.0f));
  bool ok=false;
  String name(path);name.toLowerCase();
  digitalWrite(AMP_EN,LOW);
