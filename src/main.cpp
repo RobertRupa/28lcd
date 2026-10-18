@@ -10,6 +10,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <math.h>
 #include <Preferences.h>
+#include <DHT.h>
 #include "board_config.h"
 #include "display.h"
 
@@ -152,7 +153,12 @@ static void onI2c(lv_event_t*){
 
 static Preferences thermostatPrefs;
 static float setPoint=21.0f;
-static float roomTemp=20.0f; // TEST: simulated value; no physical sensor configured
+static float roomTemp=20.0f; // simulated unless DHT_GPIO >= 0
+#if DHT_GPIO >= 0
+static DHT dht(DHT_GPIO,DHT_SENSOR_TYPE);
+static uint32_t lastDhtRead=0;
+static bool dhtOk=false;
+#endif
 static float hysteresis=0.5f;
 static bool heatingEnabled=true;
 static bool heatingDemand=false; // Logic only; no relay GPIO is driven
@@ -175,6 +181,9 @@ static void onTarget(lv_event_t *e){
  thermostatPrefs.putFloat("target",setPoint);thermostatRefresh();
 }
 static void onSimulation(lv_event_t *e){
+#if DHT_GPIO >= 0
+ return; // Live sensor owns the temperature, simulation disabled.
+#endif
  roomTemp=lv_slider_get_value(lv_event_get_target(e))/10.0f;thermostatRefresh();
 }
 static void onHeatEnable(lv_event_t *e){
@@ -208,7 +217,13 @@ static void makeThermostat(lv_obj_t *tab){
  lv_slider_set_value(targetSlider,(int)(setPoint*10),LV_ANIM_OFF);
  lv_obj_add_event_cb(targetSlider,onTarget,LV_EVENT_VALUE_CHANGED,nullptr);
  heatLabel=makeHeading(tab,"GRZANIE: OFF");
- thermoNote=makeHeading(tab,"DEMO - temperatura symulowana");
+ thermoNote=makeHeading(tab,
+#if DHT_GPIO >= 0
+ "Czujnik DHT GPIO2 (odczyt co 2.5s)"
+#else
+ "DEMO - temperatura symulowana"
+#endif
+ );
  lv_obj_set_style_text_color(thermoNote,lv_color_hex(0xFBBF24),0);
  thermostatRefresh();
 }
@@ -248,6 +263,9 @@ void setup(){
  hysteresis=constrain(thermostatPrefs.getFloat("hyst",0.5f),0.2f,2.0f);
  heatingEnabled=thermostatPrefs.getBool("enabled",true);
  Serial.println("\nES3C28P LVGL Peripheral Lab");
+#if DHT_GPIO >= 0
+ dht.begin();
+#endif
  pinMode(BOOT_GPIO,INPUT_PULLUP);pinMode(AMP_EN,OUTPUT);digitalWrite(AMP_EN,HIGH);
  pixel.begin();pixel.clear();pixel.show();
  Wire.begin(TOUCH_SDA,TOUCH_SCL,400000);
@@ -272,7 +290,11 @@ void setup(){
  setupUI();
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
-void loop(){lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
+void loop(){
+#if DHT_GPIO >= 0
+ if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);if(dhtOk){roomTemp=t;thermostatRefresh();}else{heatingDemand=false;thermostatRefresh();}}
+#endif
+ lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
  char b[96];snprintf(b,sizeof(b),"BAT ADC: %d (szac. %.2f V*)",raw,voltage);
  if(batteryLabel)lv_label_set_text(batteryLabel,b);
