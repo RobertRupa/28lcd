@@ -239,7 +239,7 @@ static void bootMelody(){
   for(uint32_t pos=0;pos<frames;pos+=128){
    const uint32_t count=min((uint32_t)128,frames-pos);
    for(uint32_t i=0;i<count;i++){
-    float envelope=(float)min(pos+i,150U)/150.0f;
+    float envelope=(float)min((uint32_t)(pos+i),(uint32_t)150)/150.0f;
     envelope*=min(1.0f,(float)(frames-pos-i)/200.0f);
     int16_t sample=(int16_t)(sinf(phase)*2400.0f*envelope*((float)masterVolume/100.0f));
     buf[2*i]=sample;buf[2*i+1]=sample;
