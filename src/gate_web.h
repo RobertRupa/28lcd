@@ -135,9 +135,8 @@ static void gateWebBegin(){
   if(cameraBasicUser[idx].length()){parsedUser=cameraBasicUser[idx];parsedPass=cameraBasicPass[idx];}
   HTTPClient probe;probe.setTimeout(2500);
   const char *headers[]={"Content-Type"};probe.collectHeaders(headers,1);
-  if(!probe.begin(clean)){gateWeb.send(502,"text/plain","Blad inicjalizacji HTTP");return;}
-  if(parsedUser.length())probe.setAuthorization(parsedUser.c_str(),parsedPass.c_str());
-  int code=probe.GET();String type=probe.header("Content-Type");probe.end();
+  int code=cameraAuthenticatedGet(probe,clean,parsedUser,parsedPass);
+  String type=probe.header("Content-Type");probe.end();
   gateWeb.send(200,"text/plain","Kamera "+String(idx+1)+": HTTP "+String(code)+"; Content-Type: "+(type.length()?type:"nieznany"));
  });
  gateWeb.on("/status",HTTP_GET,[](){
