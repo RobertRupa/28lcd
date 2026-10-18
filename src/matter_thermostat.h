@@ -23,8 +23,10 @@ static void matterThermostatBegin() {
     Serial.printf("[MATTER] QR URL: %s\\n", Matter.getOnboardingQRCodeUrl().c_str());
   }
   matterThermostat.setHeatingSetpoint(setPoint);
-  matterThermostat.setMode(heatingEnabled ? MatterThermostat::THERMOSTAT_MODE_HEAT :
-                                            MatterThermostat::THERMOSTAT_MODE_OFF);
+  if (!matterThermostat.setMode(heatingEnabled ? MatterThermostat::THERMOSTAT_MODE_HEAT :
+                                              MatterThermostat::THERMOSTAT_MODE_OFF)) {
+    Serial.printf("[MATTER] Initial thermostat mode rejected: %s\\n",heatingEnabled?"HEAT":"OFF");
+  }
   if (temperatureValid && isfinite(roomTemp)) matterThermostat.setLocalTemperature(roomTemp);
   matterPublishedTarget=setPoint;
   matterPublishedEnabled=heatingEnabled;
