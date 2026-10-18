@@ -128,3 +128,32 @@ Wykonywanie poleceń termostatu na zdalnym przekaźniku powinno wymagać ACK, wa
 - Nie dokonano kompilacji PlatformIO ani testu na płytce w ramach tych zmian.
 - Na LCD 240x320 zawartość widoków przewija się w pionie; pasek zakładek przewija się w poziomie.
 - UI zostaje na LVGL **8.3**, a nie 9.x — to świadomy etap migracji bez zmiany sprawdzonych sterowników.
+
+## Media + UART implementation (feature branch, experimental)
+
+### Audio ES8311
+- `/test.mp3` or `/test.wav` on SD -> AUDIO -> Play; non-blocking decoding via ESP8266Audio 1.9.7, I2S1 output with MCLK GPIO4.
+- AUDIO -> Record starts 10-second mono 16-kHz WAV to `/record.wav`; another press stops.
+- **Microphone ADC setup on ES8311 still needs board validation.** The code configures I2S RX; ES8311 must be initialized for ADC recording with the appropriate input path/gain. An empty/silent recording is possible until this is verified.
+- The existing 440-Hz test is synchronous and should not be launched during playback/recording.
+
+### CCTV MJPEG
+- Connect Wi-Fi under RADIO.
+- CCTV -> HTTP URL, e.g. `http://192.168.1.100/mjpeg`; Start.
+- Server must expose **HTTP** MJPEG (multipart) with JPEG frames <= 240x180 and <=120 KB per frame; limited to ~3 fps.
+- Also accepts continuous concatenated JPEG frames. Single JPEG still-image URLs stop at EOF.
+- No RTSP, H.264, HTTPS, MJPEG HTTP authentication, camera discovery or sound.
+- Network stream decoding runs in UI loop with small read budgets; this is an initial implementation to hardware-test for stalls and image corruption.
+
+### External ESP32-C5/C6/H2 (example transport, not a Thread stack)
+- Optional `-DENABLE_COPROCESSOR_UART` in ES3C28P build flags activates UART1 on GPIO43 RX / GPIO44 TX.
+- Bidirectional wiring S3 TX44 -> module RX and S3 RX43 <- module TX, common GND, 3.3V signalling; ensure USB CDC logs and prevent conflicts with UART0 boot activity.
+- The standalone example `coprocessor/` targets XIAO ESP32-C6. Adjust `LINK_RX_GPIO`, `LINK_TX_GPIO`, `RELAY_GPIO` in its own `platformio.ini`. Defaults to relay **disabled**.
+- Host sends a heartbeat every 500 ms in format `$TH,sequence,heat,XOR\n`; controller acknowledges `$ACK,sequence,state,XOR\n`.
+- Controller forces relay OFF after 1.5 seconds without a valid command. Host never requests heat from simulated temperature, only from a valid DHT reading.
+- No pairing, authentication or OpenThread operation is implemented. **A true Thread/Matter thermostat/receiver still needs dedicated OpenThread application firmware and commissioning.** This UART example only establishes relay-control transport.
+- External relay needs appropriate electrical isolation, safe defaults and an independent temperature safety cutoff. Not suitable for unattended mains heating without separate hardware failsafe.
+
+### Build validation
+- Added GitHub Actions workflow `.github/workflows/build.yml` for the S3 and coprocessor firmware.
+- No local PlatformIO toolchain or physical ES3C28P was available to validate the changes in this session. Verify status of the GitHub Actions run and test on hardware before merging PR #1.
