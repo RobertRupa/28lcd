@@ -453,6 +453,7 @@ static void makeAdmin(lv_obj_t *tab){
 }
 
 #include "audio_engine.h"
+#include "udp_doorbell.h"
 #include "camera_engine.h"
 #include "coprocessor.h"
 #include "gate_web.h"
@@ -554,7 +555,7 @@ void setup(){
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
 void loop(){
- audioService();coproService();cameraService();masterVolumeService();gateWebService();wifiAutoService();matterThermostatService();
+ audioService();doorbellUdpService();coproService();cameraService();masterVolumeService();gateWebService();wifiAutoService();matterThermostatService();
 #if DHT_GPIO >= 0
  if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);temperatureValid=dhtOk;if(dhtOk)roomTemp=t;else heatingDemand=false;thermostatRefresh();}
 #else
