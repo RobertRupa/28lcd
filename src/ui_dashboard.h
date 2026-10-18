@@ -83,7 +83,7 @@ static void uiAudioRefreshFiles(lv_event_t *){
     if(!item.isDirectory()&&(name.endsWith(".mp3")||name.endsWith(".wav"))){
      audioPaths[audioPathCount]=String(item.name());
      if(!audioPaths[audioPathCount].startsWith("/"))audioPaths[audioPathCount]="/"+audioPaths[audioPathCount];
-     if(audioPathCount)choices+="\\n";
+     if(audioPathCount)choices+="\n";
      choices+=audioPaths[audioPathCount];audioPathCount++;
     }
     item.close();
