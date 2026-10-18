@@ -187,7 +187,14 @@ static void thermostatRefresh(){
  }
  if(targetLabel){snprintf(b,sizeof(b),"Cel: %.1f°C",setPoint);lv_label_set_text(targetLabel,b);}
  if(heatLabel)lv_label_set_text(heatLabel,heatingDemand?"GRZANIE: ZADANE":"GRZANIE: OFF");
- if(adminLabel){snprintf(b,sizeof(b),"Histereza %.1f°C | %s\nTemperatura symulowana\nWyjscie przekaznika: NIEPRZYPISANE",hysteresis,heatingEnabled?"AUTO":"OFF");lv_label_set_text(adminLabel,b);}
+ if(adminLabel){
+#if DHT_GPIO >= 0
+ snprintf(b,sizeof(b),"Histereza %.1f C / %s\\nCzujnik DHT: %s\\nWyjscie: nieprzypisane",hysteresis,heatingEnabled?"AUTO":"OFF",temperatureValid?"OK":"BRAK");
+#else
+ snprintf(b,sizeof(b),"Histereza %.1f C / %s\\nTemperatura ukladu ESP32\\nOgrzewanie zablokowane bez DHT",hysteresis,heatingEnabled?"AUTO":"OFF");
+#endif
+ lv_label_set_text(adminLabel,b);
+}
 }
 static void onTarget(lv_event_t *e){
  setPoint=lv_slider_get_value(lv_event_get_target_obj(e))/10.0f;
@@ -197,7 +204,8 @@ static void onSimulation(lv_event_t *e){
 #if DHT_GPIO >= 0
  return; // Live sensor owns the temperature, simulation disabled.
 #endif
- // Fallback sensor is read-only. No simulated room temperature.\n (void)e;
+ // Fallback sensor is read-only. No simulated room temperature.
+ (void)e;
 }
 static void onHeatEnable(lv_event_t *e){
  heatingEnabled=lv_obj_has_state(lv_event_get_target_obj(e),LV_STATE_CHECKED);
@@ -242,7 +250,7 @@ static void makeThermostat(lv_obj_t *tab){
 #else
  lv_label_set_text(subtitle,"TEMPERATURA UKLADU / ESP32");
 #endif
- lv_obj_set_style_text_color(subtitle,lv_color_hex(0x9AACBE),0);
+ lv_obj_set_style_text_color(subtitle,lv_color_hex(0xD1DCEC),0);
  roomLabel=lv_label_create(card);lv_label_set_text(roomLabel,"20.0°C");
  lv_obj_set_style_text_font(roomLabel,&lv_font_montserrat_28,0);
  lv_obj_set_style_text_color(roomLabel,lv_color_hex(0xF8FAFC),0);
