@@ -80,3 +80,51 @@ cd 28lcd
 Po otwarciu katalogu w VS Code mozna uzyc rozszerzenia PlatformIO. Projekt ma zadeklarowane LVGL 8, LovyanGFX i Adafruit NeoPixel.
 
 Ograniczenia: kompilacja i test na fizycznej plytce nie zostaly przeprowadzone w ramach tej aktualizacji.
+
+
+## Dashboard LVGL — gałąź `feature/lvgl-dashboard`
+
+Ta gałąź przebudowuje interfejs na 7 widoków LVGL 8: DOM, RADIO, AUDIO, LCD, BAT, RGB, ADMIN.
+Nowe widoki: `src/ui_dashboard.h`. Zachowane działające sterowniki ILI9341, FT6336, ES8311, SD_MMC i WS2812 z projektu bazowego.
+
+### Status funkcjonalny (nie mylić GUI z kompletnym sterownikiem)
+
+| Funkcja | Status |
+|---|---|
+| Termostat, nastawa/histereza NVS | Zaimplementowano demonstrację, bez przekaźnika |
+| DHT11/DHT22 | Opcjonalne odczyty na GPIO2, po konfiguracji build |
+| Wi-Fi SSID + hasło w NVS | Dodano UI, zapis, ponowne łączenie i usuwanie |
+| Skan Wi-Fi/BLE | Zachowane; operacje blokujące GUI na czas skanowania |
+| LCD i dotyk | Regulacja jasności, pole testowe z koordynatami |
+| WS2812 | Zachowana zmiana kolorów |
+| ES8311 | Zachowany test 440 Hz |
+| SD | Zachowana lista plików |
+| Nagranie WAV / odtworzenie WAV / MP3 | **Niezaimplementowane** — przyciski informacyjne |
+| Bateria | Szacowany odczyt ADC, wymagana kalibracja dzielnika |
+| Thread/Zigbee ESP32-C5/C6/H2 | **Niezaimplementowane** — wymagane połączenie RCP i protokół |
+| CCTV MJPEG/RTSP | **Niezaimplementowane** — wymagany transport, dekoder i wydajnościowe testy |
+
+### Opcjonalny czujnik temperatury DHT
+
+Domyślnie `DHT_GPIO=-1`: termostat używa temperatury symulowanej.
+Aby przełączyć na fizyczny czujnik, dodaj do `build_flags` w `platformio.ini`:
+
+```ini
+  -DDHT_GPIO=2
+  -DDHT_SENSOR_TYPE=22
+```
+
+Dla DHT11 ustaw `-DDHT_SENSOR_TYPE=11`. DHT DATA podłącz do **GPIO2**, masa do GND, zasilanie zgodne z modułem (zalecane 3.3 V), w razie potrzeby rezystor podciągający DATA do 3.3 V. Przy błędzie odczytu DHT zapotrzebowanie na grzanie w logice jest zerowane. **Nie jest to gotowe urządzenie bezpieczeństwa cieplnego.**
+
+### Koprocesor Thread / Zigbee
+
+ESP32-S3 nie posiada radia 802.15.4. Do Thread/Zigbee potrzebny jest zewnętrzny **ESP32-C5/C6/H2**.
+Na płytce dostępne są np. GPIO43 (RX0) i GPIO44 (TX0), ale współdzielą one UART0 — zanim podłączysz RCP, skonfiguruj konsolę USB i sprawdź bootlog oraz poziomy 3.3 V. Sama wymiana ramek UART nie implementuje OpenThread Border Routera: potrzebny jest Spinel RCP / warstwa hosta i odpowiednia integracja sieci IP.
+Wykonywanie poleceń termostatu na zdalnym przekaźniku powinno wymagać ACK, watchdog i timeout wyłączający przekaźnik, przy braku danych/łączności.
+
+### Ograniczenia
+
+- Hasło Wi-Fi jest przechowywane w NVS przez `Preferences` — **nie gwarantuje to szyfrowania flash**. W urządzeniu produkcyjnym należy rozważyć NVS encryption / flash encryption.
+- Nie dokonano kompilacji PlatformIO ani testu na płytce w ramach tych zmian.
+- Na LCD 240x320 zawartość widoków przewija się w pionie; pasek zakładek przewija się w poziomie.
+- UI zostaje na LVGL **8.3**, a nie 9.x — to świadomy etap migracji bez zmiany sprawdzonych sterowników.
