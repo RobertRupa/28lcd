@@ -256,6 +256,14 @@ static void uiMakeRgb(lv_obj_t *tab){
 static lv_obj_t *bladePages[11]={};
 static lv_obj_t *bladeHint=nullptr;
 static uint8_t bladePage=0;
+static bool bladeAnimating=false;
+static void bladeAnimDone(lv_anim_t *a){
+ lv_obj_t *old=(lv_obj_t*)lv_anim_get_user_data(a);
+ if(old){lv_obj_add_flag(old,LV_OBJ_FLAG_HIDDEN);lv_obj_set_x(old,0);}
+ bladeAnimating=false;
+}
+static void bladeSetX(void *obj,int32_t x){lv_obj_set_x((lv_obj_t*)obj,x);}
+
 static void bladeShow(uint8_t page){
  if(page>=11)return;
  bladePage=page;
@@ -274,7 +282,33 @@ static void bladeShow(uint8_t page){
  }
 }
 static void bladeNavigate(int8_t direction){
- bladeShow((uint8_t)((bladePage+11+(direction>0?1:-1))%11));
+ if(bladeAnimating||direction==0)return;
+ uint8_t oldIndex=bladePage;
+ uint8_t next=(uint8_t)((bladePage+11+(direction>0?1:-1))%11);
+ lv_obj_t *old=bladePages[oldIndex],*incoming=bladePages[next];
+ if(!old||!incoming)return;
+ bladeAnimating=true;
+ // Move content horizontally while keeping bottom navigation hint stationary.
+ lv_obj_remove_flag(incoming,LV_OBJ_FLAG_HIDDEN);
+ lv_obj_set_x(incoming,direction>0?LCD_W:-LCD_W);
+ lv_obj_move_foreground(incoming);
+ lv_anim_t in;lv_anim_init(&in);
+ lv_anim_set_var(&in,incoming);lv_anim_set_exec_cb(&in,bladeSetX);
+ lv_anim_set_values(&in,direction>0?LCD_W:-LCD_W,0);
+ lv_anim_set_time(&in,190);lv_anim_set_path_cb(&in,lv_anim_path_ease_out);
+ lv_anim_start(&in);
+ lv_anim_t out;lv_anim_init(&out);
+ lv_anim_set_var(&out,old);lv_anim_set_exec_cb(&out,bladeSetX);
+ lv_anim_set_values(&out,0,direction>0?-LCD_W:LCD_W);
+ lv_anim_set_time(&out,190);lv_anim_set_path_cb(&out,lv_anim_path_ease_out);
+ lv_anim_set_user_data(&out,old);lv_anim_set_completed_cb(&out,bladeAnimDone);
+ lv_anim_start(&out);
+ // Updates the next/previous navigation preview and current active page.
+ bladePage=next;
+ static const char *pageNames[]={"DOM","RADIO","AUDIO","MENU","EKRAN","BATERIA","RGB","ADMIN","KAMERA","BRAMA","ZEGAR"};
+ if(bladeHint){char hint[80];snprintf(hint,sizeof(hint),"< %s  |  %s >",pageNames[(next+10)%11],pageNames[(next+1)%11]);lv_label_set_text(bladeHint,hint);}
+ if(fpsOverlay)lv_obj_move_foreground(fpsOverlay);
+ if(bladeHint)lv_obj_move_foreground(bladeHint);
 }
 static void bladeNavEvent(lv_event_t *e){bladeShow((uint8_t)(uintptr_t)lv_event_get_user_data(e));}
 static lv_obj_t *bladeButton(lv_obj_t *parent,const char *txt,uint8_t page){
