@@ -7,6 +7,7 @@
 static Preferences gatePrefs;
 static WebServer gateWeb(80);
 static String gateUrls[3], cameraUrls[4];
+static String cameraBasicUser[4],cameraBasicPass[4];
 static String gateWebPassword;
 static bool gateWebReady=false;
 static bool gateBusy=false;
@@ -56,7 +57,12 @@ static void gatePage(){
  page+=F("</section><form method='POST' action='/save'><section><h2>GET URL akcji</h2><small>Dozwolone HTTP i prywatne adresy IPv4 LAN. Kazdy przycisk ma oddzielny URL.</small>");
  for(int i=0;i<3;i++)page+="<label>"+gateEsc(gateNames[i])+"<input name='gate"+String(i)+"' maxlength='240' value='"+gateEsc(gateUrls[i])+"'></label>";
  page+=F("</section><section><h2>Kamery</h2>");
- for(int i=0;i<4;i++)page+="<label>Kamera "+String(i+1)+"<input name='cam"+String(i)+"' maxlength='240' value='"+gateEsc(cameraUrls[i])+"'></label>";
+ for(int i=0;i<4;i++){
+  page+="<label>Kamera "+String(i+1)+" URL<input name='cam"+String(i)+"' maxlength='240' value='"+gateEsc(cameraUrls[i])+"'></label>";
+  page+="<label>Basic Auth login<input name='cuser"+String(i)+"' maxlength='48' value='"+gateEsc(cameraBasicUser[i])+"'></label>";
+  page+="<label>Nowe haslo BA (puste = bez zmian)<input name='cpass"+String(i)+"' type='password' maxlength='80' autocomplete='new-password'></label>";
+  page+="<button type='submit' formmethod='POST' formaction='/testcam' name='idx' value='"+String(i)+"'>Test kamera "+String(i+1)+"</button>";
+ }
  page+=F("</section><section><h2>Siec Wi-Fi</h2><label>SSID<input name='ssid' maxlength='32' value='");
  page+=gateEsc(wifiPrefs.getString("ssid",""));page+=F("'></label><label>Nowe haslo Wi-Fi (puste = bez zmian)<input name='wifiPass' type='password' maxlength='63' autocomplete='new-password'></label></section>");
  page+=F("<section><h2>Administrator</h2><label>Nowe haslo WWW (puste = bez zmian)<input name='webPass' type='password' minlength='12' autocomplete='new-password'></label></section><button>Zapisz ustawienia</button></form><script>setInterval(async()=>{try{const r=await fetch('/status');if(r.ok){let j=await r.json();document.getElementById('status').textContent='Temp: '+j.temperature+' C ('+j.source+') / Grzanie: '+(j.heating?'TAK':'NIE')+' / Wi-Fi: '+j.ip;}}catch(e){}},2000)</script></html>");
@@ -70,7 +76,14 @@ static void gateSave(){
  String newPassword=gateWeb.arg("webPass");
  if(newPassword.length()&&(newPassword.length()<12||newPassword.length()>64)){gateWeb.send(400,"text/plain","Haslo WWW musi miec 12-64 znakow");return;}
  for(int i=0;i<3;i++){gateUrls[i]=newGate[i];gatePrefs.putString(("gate"+String(i)).c_str(),gateUrls[i]);}
- for(int i=0;i<4;i++){cameraUrls[i]=newCam[i];gatePrefs.putString(("cam"+String(i)).c_str(),cameraUrls[i]);}
+ for(int i=0;i<4;i++){
+  cameraUrls[i]=newCam[i];gatePrefs.putString(("cam"+String(i)).c_str(),cameraUrls[i]);
+  cameraBasicUser[i]=gateWeb.arg("cuser"+String(i));cameraBasicUser[i].trim();
+  if(cameraBasicUser[i].length()>48){gateWeb.send(400,"text/plain","Login za dlugi");return;}
+  gatePrefs.putString(("cu"+String(i)).c_str(),cameraBasicUser[i]);
+  String secret=gateWeb.arg("cpass"+String(i));
+  if(secret.length()){cameraBasicPass[i]=secret;gatePrefs.putString(("cp"+String(i)).c_str(),secret);}
+ }
  String ssid=gateWeb.arg("ssid"),pass=gateWeb.arg("wifiPass");
  if(ssid.length()<=32&&!ssid.isEmpty())wifiPrefs.putString("ssid",ssid);
  if(!pass.isEmpty()&&pass.length()<=63)wifiPrefs.putString("password",pass);
@@ -83,6 +96,8 @@ static void gateWebBegin(){
  for(int i=0;i<4;i++){
   String fallback="http://192.168.68."+String(51+i)+"/cgi-bin/mjpg/video.cgi?channel=1&subtype=1";
   cameraUrls[i]=(gatePrefs.isKey(("cam"+String(i)).c_str())?gatePrefs.getString(("cam"+String(i)).c_str(),fallback):fallback);
+  cameraBasicUser[i]=gatePrefs.getString(("cu"+String(i)).c_str(),"");
+  cameraBasicPass[i]=gatePrefs.getString(("cp"+String(i)).c_str(),"");
  }
  gateWebPassword=gatePrefs.getString("webpass","");
  if(gateWebPassword.isEmpty()){
@@ -99,6 +114,19 @@ static void gateWebBegin(){
   if(!gateAuthorized())return;
   int id=gateWeb.arg("idx").toInt();if(id<0||id>=3){gateWeb.send(400,"text/plain","Indeks");return;}
   String result;bool ok=gateRequest(id,result);gateWeb.send(ok?200:503,"text/plain",result);
+ });
+ gateWeb.on("/testcam",HTTP_POST,[](){
+  if(!gateAuthorized())return;
+  int idx=gateWeb.arg("idx").toInt();
+  if(idx<0||idx>=4){gateWeb.send(400,"text/plain","Indeks kamery");return;}
+  // Test saved connection settings; no password or URL echo in response.
+  String u=cameraUrls[idx];
+  if(!gateIsLanUrl(u)){gateWeb.send(400,"text/plain","Nieprawidlowy lokalny URL");return;}
+  HTTPClient probe;probe.setTimeout(2500);
+  if(!probe.begin(u)){gateWeb.send(502,"text/plain","Blad inicjalizacji HTTP");return;}
+  if(cameraBasicUser[idx].length())probe.setAuthorization(cameraBasicUser[idx].c_str(),cameraBasicPass[idx].c_str());
+  int code=probe.GET();probe.end();
+  gateWeb.send(200,"text/plain","Kamera "+String(idx+1)+": HTTP "+String(code));
  });
  gateWeb.on("/status",HTTP_GET,[](){
   if(!gateAuthorized())return;
