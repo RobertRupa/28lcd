@@ -303,12 +303,30 @@ static lv_obj_t *targetSlider=nullptr,*simulationSlider=nullptr,*heatSwitch=null
 // RGB WS2812 maps configured temperature setpoint: blue -> red.
 static float ledTempMin=14.0f,ledTempMax=28.0f;
 static uint8_t ledBrightness=48;
+// Temperature palette: cool blue -> icy blue -> white -> warm yellow -> orange -> red.
+// Interpolate adjacent RGB stops instead of mixing blue and red (which yields purple).
 static void thermostatLedUpdate(){
- float range=max(0.5f,ledTempMax-ledTempMin);
- float ratio=constrain((setPoint-ledTempMin)/range,0.0f,1.0f);
- uint8_t r=(uint8_t)roundf(ledBrightness*ratio);
- uint8_t b=(uint8_t)roundf(ledBrightness*(1.0f-ratio));
- pixel.setPixelColor(0,pixel.Color(r,0,b));
+ struct LedColorStop { float position; uint8_t r,g,b; };
+ static constexpr LedColorStop palette[]={
+  {0.00f,  0,  80, 255}, // cold blue
+  {0.25f, 80, 190, 255}, // ice blue
+  {0.45f,220, 245, 255}, // cool white
+  {0.58f,255, 245, 220}, // warm white
+  {0.72f,255, 175,  40}, // amber
+  {0.86f,255,  85,   0}, // orange
+  {1.00f,255,   0,   0}  // hot red
+ };
+ float ratio=constrain((setPoint-ledTempMin)/max(0.5f,ledTempMax-ledTempMin),0.0f,1.0f);
+ const LedColorStop *from=&palette[0],*to=&palette[sizeof(palette)/sizeof(palette[0])-1];
+ for(size_t i=1;i<sizeof(palette)/sizeof(palette[0]);++i){
+  if(ratio<=palette[i].position){from=&palette[i-1];to=&palette[i];break;}
+ }
+ float t=constrain((ratio-from->position)/(to->position-from->position),0.0f,1.0f);
+ float brightness=(float)ledBrightness/255.0f;
+ uint8_t r=(uint8_t)roundf((from->r+(to->r-from->r)*t)*brightness);
+ uint8_t g=(uint8_t)roundf((from->g+(to->g-from->g)*t)*brightness);
+ uint8_t b=(uint8_t)roundf((from->b+(to->b-from->b)*t)*brightness);
+ pixel.setPixelColor(0,pixel.Color(r,g,b));
  pixel.show();
 }
 static void thermostatRefresh(){
