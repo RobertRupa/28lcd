@@ -7,8 +7,8 @@ static HTTPClient cameraHttp;
 static WiFiClient *cameraStream=nullptr;
 static JPEGDEC cameraDecoder;
 static uint8_t *cameraFrame=nullptr;
-static lv_color_t *cameraPixels=nullptr;
-static lv_img_dsc_t cameraImageDescriptor={};
+static uint16_t *cameraPixels=nullptr;
+static lv_image_dsc_t cameraImageDescriptor={};
 static lv_obj_t *cameraImageObject=nullptr;
 static lv_obj_t *cameraStatusObject=nullptr;
 static bool cameraActive=false;
@@ -23,7 +23,7 @@ static int cameraDraw(JPEGDRAW *d){
   int y=d->y+yy;if(y<0||y>=cameraH)continue;
   for(int xx=0;xx<d->iWidth;xx++){
    int x=d->x+xx;if(x<0||x>=cameraW)continue;
-   cameraPixels[y*cameraW+x].full=d->pPixels[yy*d->iWidth+xx];
+   cameraPixels[y*cameraW+x]=d->pPixels[yy*d->iWidth+xx];
   }
  }
  return 1;
@@ -36,13 +36,13 @@ static bool cameraStart(const char *url){
  cameraStop();
  if(WiFi.status()!=WL_CONNECTED||!url||strncmp(url,"http://",7)!=0)return false;
  if(!cameraFrame)cameraFrame=(uint8_t*)heap_caps_malloc(cameraMaxFrame,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
- if(!cameraPixels)cameraPixels=(lv_color_t*)heap_caps_malloc(cameraW*cameraH*sizeof(lv_color_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+ if(!cameraPixels)cameraPixels=(uint16_t*)heap_caps_malloc(cameraW*cameraH*sizeof(uint16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
  if(!cameraFrame||!cameraPixels)return false;
- memset(cameraPixels,0,cameraW*cameraH*sizeof(lv_color_t));
- cameraImageDescriptor.header.always_zero=0;
+ memset(cameraPixels,0,cameraW*cameraH*sizeof(uint16_t));
+ cameraImageDescriptor.header.magic=LV_IMAGE_HEADER_MAGIC;
  cameraImageDescriptor.header.w=cameraW;cameraImageDescriptor.header.h=cameraH;
- cameraImageDescriptor.header.cf=LV_IMG_CF_TRUE_COLOR;
- cameraImageDescriptor.data_size=cameraW*cameraH*sizeof(lv_color_t);
+ cameraImageDescriptor.header.cf=LV_COLOR_FORMAT_RGB565;
+ cameraImageDescriptor.data_size=cameraW*cameraH*sizeof(uint16_t);
  cameraImageDescriptor.data=(const uint8_t*)cameraPixels;
  cameraHttp.setTimeout(1000);
  if(!cameraHttp.begin(url))return false;
@@ -74,7 +74,7 @@ static void cameraService(){
     if(w<=cameraW&&h<=cameraH){
      cameraDecoder.setPixelType(RGB565_LITTLE_ENDIAN);
      cameraDecoder.decode(0,0,0);
-     lv_img_set_src(cameraImageObject,&cameraImageDescriptor);
+     lv_image_set_src(cameraImageObject,&cameraImageDescriptor);
      lv_obj_invalidate(cameraImageObject);
      cameraLastFrame=millis();
     }else if(cameraStatusObject){lv_label_set_text(cameraStatusObject,"JPEG > 240x180: zmniejsz rozdzielczosc kamery");}
