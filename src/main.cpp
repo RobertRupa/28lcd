@@ -166,7 +166,11 @@ static lv_obj_t *roomLabel=nullptr,*targetLabel=nullptr,*heatLabel=nullptr,*ther
 static lv_obj_t *targetSlider=nullptr,*simulationSlider=nullptr,*heatSwitch=nullptr,*hysteresisSlider=nullptr;
 
 static void thermostatRefresh(){
- if(heatingEnabled){
+ bool sensorAvailable=true;
+#if DHT_GPIO >= 0
+ sensorAvailable=dhtOk;
+#endif
+ if(heatingEnabled && sensorAvailable){
   if(heatingDemand && roomTemp >= setPoint+hysteresis/2.0f) heatingDemand=false;
   else if(!heatingDemand && roomTemp <= setPoint-hysteresis/2.0f) heatingDemand=true;
  } else heatingDemand=false;
