@@ -67,10 +67,12 @@ static void uiTouchEvent(lv_event_t *e){
  if(touchInfoLabel)lv_label_set_text(touchInfoLabel,msg);
 }
 static void uiAudioRecordNotice(lv_event_t *){
- lv_label_set_text(audioInfoLabel,"Nagrywanie ES8311 ADC: jeszcze niezaimplementowane.");
+ if(audioIsRecording)audioFinishRecord();else if(!audioStartRecord())snprintf(audioMessage,sizeof(audioMessage),"Recording failed (SD/codec/I2S)");
+ lv_label_set_text(audioInfoLabel,audioMessage);
 }
 static void uiAudioPlayNotice(lv_event_t *){
- lv_label_set_text(audioInfoLabel,"Odtwarzacz WAV/MP3: wymaga dekodera i obslugi I2S.");
+ if(!audioPlayFile("/test.mp3")&&!audioPlayFile("/test.wav"))snprintf(audioMessage,sizeof(audioMessage),"Put /test.mp3 or /test.wav on SD");
+ lv_label_set_text(audioInfoLabel,audioMessage);
 }
 static void uiMakeWifi(lv_obj_t *tab){
  uiTab(tab);uiTitle(tab,"RADIO","Wi-Fi / BLE / Thread RCP");
@@ -105,7 +107,25 @@ static void uiMakeAudio(lv_obj_t *tab){
  sdLabel=label(tab,"Oczekiwanie na karte microSD");
  button(tab,"Odtwarzaj WAV / MP3",uiAudioPlayNotice);
  button(tab,"Nagraj WAV na SD",uiAudioRecordNotice);
- audioInfoLabel=label(tab,"Test tonu jest aktywny. Odtwarzanie i nagrywanie: do implementacji.");
+ audioInfoLabel=label(tab,"SD: /test.mp3 or /test.wav; record /record.wav (10s)");
+}
+static lv_obj_t *cameraUrlInput=nullptr;
+static void uiCameraStart(lv_event_t *){
+ if(!cameraStart(lv_textarea_get_text(cameraUrlInput))&&cameraStatusObject)
+  lv_label_set_text(cameraStatusObject,"Connection failed: check Wi-Fi and HTTP URL");
+}
+static void uiCameraStop(lv_event_t *){cameraStop();}
+static void uiMakeCamera(lv_obj_t *tab){
+ uiTab(tab);uiTitle(tab,"CCTV","HTTP MJPEG / JPEG (240x180)");
+ cameraUrlInput=lv_textarea_create(tab);lv_obj_set_width(cameraUrlInput,205);
+ lv_textarea_set_one_line(cameraUrlInput,true);
+ lv_textarea_set_placeholder_text(cameraUrlInput,"http://camera/mjpeg");
+ lv_obj_add_event_cb(cameraUrlInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
+ lv_obj_add_event_cb(cameraUrlInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
+ button(tab,"Start stream",uiCameraStart);
+ button(tab,"Stop stream",uiCameraStop);
+ cameraStatusObject=label(tab,"Only plain HTTP; JPEG <=240x180");
+ cameraImageObject=lv_img_create(tab);
 }
 static void uiMakeDisplay(lv_obj_t *tab){
  uiTab(tab);uiTitle(tab,"DISPLAY","Ekran i dotyk");
@@ -147,9 +167,10 @@ static void uiSetupDashboard(){
  lv_obj_t *power=lv_tabview_add_tab(tabs,"BAT");
  lv_obj_t *rgb=lv_tabview_add_tab(tabs,"RGB");
  lv_obj_t *admin=lv_tabview_add_tab(tabs,"ADMIN");
+ lv_obj_t *camera=lv_tabview_add_tab(tabs,"CCTV");
  uiTab(thermo);makeThermostat(thermo);
  uiMakeWifi(radio);uiMakeAudio(audio);uiMakeDisplay(screen);uiMakePower(power);uiMakeRgb(rgb);
- uiTab(admin);makeAdmin(admin);
+ uiTab(admin);makeAdmin(admin);uiMakeCamera(camera);
  statusUpdate();
 }
 static void uiPowerRefresh(){
