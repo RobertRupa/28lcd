@@ -7,11 +7,11 @@ static Preferences wifiPrefs;
 
 static void uiTitle(lv_obj_t *parent,const char *heading,const char *sub){
  lv_obj_t *h=lv_label_create(parent);lv_label_set_text(h,heading);
- lv_obj_set_width(h,210);lv_obj_set_style_text_font(h,&lv_font_montserrat_14,0);
+ lv_obj_set_width(h,210);lv_obj_set_style_text_font(h,&lv_font_montserrat_16,0);
  lv_obj_set_style_text_color(h,lv_color_hex(0xF8FAFC),0);
  lv_obj_t *s=lv_label_create(parent);lv_label_set_text(s,sub);
  lv_obj_set_width(s,210);lv_label_set_long_mode(s,LV_LABEL_LONG_WRAP);
- lv_obj_set_style_text_color(s,lv_color_hex(0xC7D2E1),0);
+ lv_obj_set_style_text_color(s,lv_color_hex(0xE2E8F0),0);
 }
 static void uiTab(lv_obj_t *tab){
  lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B1018),0);
@@ -19,7 +19,7 @@ static void uiTab(lv_obj_t *tab){
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);
  lv_obj_set_flex_align(tab,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
  lv_obj_set_style_pad_row(tab,9,0);
- lv_obj_set_style_text_font(tab,&lv_font_montserrat_14,0);
+ lv_obj_set_style_text_font(tab,&lv_font_montserrat_16,0);
  lv_obj_set_style_text_color(tab,lv_color_hex(0xF1F5F9),0);
 }
 static void uiOnKeyboard(lv_event_t *e){
