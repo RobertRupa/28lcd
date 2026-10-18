@@ -1,11 +1,11 @@
 #pragma once
-#include <AudioFileSourceSD.h>
+#include <AudioFileSourceFS.h>
 #include <AudioGeneratorMP3.h>
 #include <AudioGeneratorWAV.h>
 #include <AudioOutputI2S.h>
 #include <driver/i2s.h>
 // Audio jobs are processed in loop(), never inside an LVGL callback.
-static AudioFileSourceSD *audioSource=nullptr;
+static AudioFileSourceFS *audioSource=nullptr;
 static AudioGeneratorMP3 *mp3=nullptr;
 static AudioGeneratorWAV *wav=nullptr;
 static AudioOutputI2S *audioOutput=nullptr;
@@ -26,7 +26,7 @@ static void audioStop(){
 static bool audioPlayFile(const char *path){
  if(!sdOk||!codecOk||!path||!SD_MMC.exists(path))return false;
  audioStop();
- audioSource=new AudioFileSourceSD(path);
+ audioSource=new AudioFileSourceFS(SD_MMC,path);
  audioOutput=new AudioOutputI2S();
  audioOutput->SetPinout(I2S_BCLK,I2S_WS,I2S_DOUT,I2S_MCLK);
  audioOutput->SetGain(0.25f);
