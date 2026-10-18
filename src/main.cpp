@@ -488,12 +488,6 @@ void setup(){
  pinMode(TOUCH_IRQ,INPUT_PULLUP);
  touchOk=i2cPing(TOUCH_ADDR);
  if(touchOk){Wire.beginTransmission(TOUCH_ADDR);Wire.write(0xA4);Wire.write(0x00);Wire.endTransmission();}
- codecBegin();
- bootMelody();
- lcd.init();lcd.setRotation(0);lcd.setBrightness(160);lcd.fillScreen(TFT_BLACK);
- // Shared with SDIO pins only, never configure them as GPIO elsewhere.
- SD_MMC.setPins(SD_CLK,SD_CMD,SD_D0,SD_D1,SD_D2,SD_D3);
- sdOk=SD_MMC.begin("/sdcard",false,false,20000,5);
  WiFi.mode(WIFI_STA);
  WiFi.setAutoReconnect(true);
  {String ssid=wifiPrefs.getString("ssid","");if(ssid.length()){WiFi.begin(ssid.c_str(),wifiPrefs.getString("password","").c_str());wifiRetryAt=millis();}}
@@ -502,11 +496,24 @@ void setup(){
    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
    (unsigned)ESP.getFreePsram());
- matterThermostatBegin();
+ const size_t freeInternal=heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+ const size_t largestInternal=heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+ if(freeInternal<130*1024 || largestInternal<48*1024) {
+   Serial.println("[MATTER] Skipping startup: insufficient internal RAM for CHIP/BLE/mDNS. UI will start without Matter.");
+ } else {
+   matterThermostatBegin();
+ }
  Serial.printf("[MATTER] Post-init: internal free=%u, largest=%u\n",
    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
 #endif
+ // Hardware-heavy peripherals are initialized after Matter's memory check.
+ codecBegin();
+ bootMelody();
+ lcd.init();lcd.setRotation(0);lcd.setBrightness(160);lcd.fillScreen(TFT_BLACK);
+ // Shared with SDIO pins only, never configure them as GPIO elsewhere.
+ SD_MMC.setPins(SD_CLK,SD_CMD,SD_D0,SD_D1,SD_D2,SD_D3);
+ sdOk=SD_MMC.begin("/sdcard",false,false,20000,5);
  lv_init();
  // Matter requires internal RAM for BLE/mDNS. This synchronous LovyanGFX flush
  // does not DMA directly from the LVGL buffer, so use PSRAM here.
