@@ -166,6 +166,10 @@ static void onWifi(lv_event_t*){
 }
 static void onBle(lv_event_t*){
  if(bleLabel)lv_label_set_text(bleLabel,"Skan BLE przez 3 sekundy...");
+ #if defined(ENABLE_28LCD_MATTER) && ENABLE_28LCD_MATTER
+ if(bleLabel)lv_label_set_text(bleLabel,"BLE scan disabled: Matter owns commissioning BLE");
+ return;
+ #else
  BLEDevice::init("");
  BLEScan *scanner=BLEDevice::getScan();
  scanner->setActiveScan(true);
@@ -178,6 +182,7 @@ static void onBle(lv_event_t*){
  scanner->clearResults();
  if(bleLabel)lv_label_set_text(bleLabel,out.c_str());
  Serial.println(out);
+ #endif
 }
 static void onSd(lv_event_t*){
  if(sdBusy||!sdLabel)return;sdBusy=true;
