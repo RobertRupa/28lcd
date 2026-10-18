@@ -3,7 +3,7 @@
 static lv_obj_t *wifiSsidInput=nullptr,*wifiPassInput=nullptr,*wifiKeyboard=nullptr;
 static lv_obj_t *wifiConnectionLabel=nullptr,*powerInfoLabel=nullptr,*touchInfoLabel=nullptr;
 static lv_obj_t *audioInfoLabel=nullptr;
-static Preferences wifiPrefs;
+
 
 static void uiTitle(lv_obj_t *parent,const char *heading,const char *sub){
  lv_obj_t *h=lv_label_create(parent);lv_label_set_text(h,heading);
@@ -188,7 +188,7 @@ static void uiCameraCredentialsSave(lv_event_t *){
 static void uiCameraStart(lv_event_t *){
  cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
  char url[125];
- snprintf(url,sizeof(url),"http://192.168.68.%u/cgi-bin/mjpg/video.cgi?channel=1&subtype=1",51+cameraIndex);
+ snprintf(url,sizeof(url),"%s",cameraUrls[cameraIndex].c_str());
  String user=cameraPrefs.getString("user","");
  String pass=cameraPrefs.getString("pass","");
  if(!cameraStart(url,user.c_str(),pass.c_str())&&cameraStatusObject)
@@ -253,28 +253,28 @@ static void uiMakeRgb(lv_obj_t *tab){
  label(tab,"Wbudowany WS2812 na GPIO42.");
 }
 // Blade-style navigation: four readable actions rather than eight squeezed tabs.
-static lv_obj_t *bladePages[9]={};
+static lv_obj_t *bladePages[10]={};
 static lv_obj_t *bladeHint=nullptr;
 static uint8_t bladePage=0;
 static void bladeShow(uint8_t page){
- if(page>=9)return;
+ if(page>=10)return;
  bladePage=page;
- for(uint8_t i=0;i<9;i++){
+ for(uint8_t i=0;i<10;i++){
   if(bladePages[i]){
    if(i==page)lv_obj_remove_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
    else lv_obj_add_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
   }
  }
- static const char *pageNames[]={"DOM","RADIO","AUDIO","MENU","EKRAN","BATERIA","RGB","ADMIN","KAMERA"};
+ static const char *pageNames[]={"DOM","RADIO","AUDIO","MENU","EKRAN","BATERIA","RGB","ADMIN","KAMERA","BRAMA"};
  if(bladeHint){
   char hint[88];
-  const uint8_t prev=(page+8)%9,next=(page+1)%9;
+  const uint8_t prev=(page+9)%10,next=(page+1)%10;
   snprintf(hint,sizeof(hint),"< %s  |  %s >",pageNames[prev],pageNames[next]);
   lv_label_set_text(bladeHint,hint);
  }
 }
 static void bladeNavigate(int8_t direction){
- bladeShow((uint8_t)((bladePage+9+(direction>0?1:-1))%9));
+ bladeShow((uint8_t)((bladePage+10+(direction>0?1:-1))%10));
 }
 static void bladeNavEvent(lv_event_t *e){bladeShow((uint8_t)(uintptr_t)lv_event_get_user_data(e));}
 static lv_obj_t *bladeButton(lv_obj_t *parent,const char *txt,uint8_t page){
@@ -303,16 +303,56 @@ static void bladeSection(lv_obj_t *page){
  lv_obj_set_size(back,185,39);
  lv_obj_set_style_bg_color(back,lv_color_hex(0x263B50),0);
 }
+static lv_obj_t *gateUiStatus=nullptr;
+static void gateUiAction(lv_event_t *e){
+ uint8_t id=(uint8_t)(uintptr_t)lv_event_get_user_data(e);
+ String result;bool ok=gateRequest(id,result);
+ if(gateUiStatus)lv_label_set_text(gateUiStatus,(ok?"Wyslano: ":"Blad: ")+result);
+}
+static void gateUiConfirm(lv_event_t *e){
+ uint8_t id=(uint8_t)(uintptr_t)lv_event_get_user_data(e);
+ lv_obj_t *modal=lv_obj_create(lv_screen_active());
+ lv_obj_set_size(modal,218,146);lv_obj_center(modal);
+ lv_obj_set_style_bg_color(modal,lv_color_hex(0x182536),0);
+ lv_obj_set_style_text_color(modal,lv_color_hex(0xFFFFFF),0);
+ lv_obj_set_style_border_color(modal,lv_color_hex(0x5DA7E1),0);
+ lv_obj_t *question=lv_label_create(modal);
+ lv_label_set_text_fmt(question,"Potwierdz: %s?",gateNames[id]);
+ lv_obj_align(question,LV_ALIGN_TOP_MID,0,4);
+ lv_obj_t *yes=lv_button_create(modal);lv_obj_set_size(yes,80,46);
+ lv_obj_align(yes,LV_ALIGN_BOTTOM_LEFT,0,0);
+ lv_obj_t *yt=lv_label_create(yes);lv_label_set_text(yt,"OTWORZ");lv_obj_center(yt);
+ lv_obj_add_event_cb(yes,gateUiAction,LV_EVENT_CLICKED,(void*)(uintptr_t)id);
+ lv_obj_add_event_cb(yes,[](lv_event_t *e){lv_obj_delete((lv_obj_t*)lv_event_get_user_data(e));},LV_EVENT_CLICKED,modal);
+ lv_obj_t *no=lv_button_create(modal);lv_obj_set_size(no,80,46);
+ lv_obj_align(no,LV_ALIGN_BOTTOM_RIGHT,0,0);
+ lv_obj_t *nt=lv_label_create(no);lv_label_set_text(nt,"ANULUJ");lv_obj_center(nt);
+ lv_obj_add_event_cb(no,[](lv_event_t *e){lv_obj_delete((lv_obj_t*)lv_event_get_user_data(e));},LV_EVENT_CLICKED,modal);
+}
+static void uiMakeGate(lv_obj_t *tab){
+ uiTab(tab);uiTitle(tab,"BRAMA","Sterowanie przez Wi-Fi (HTTP GET)");
+ static const char *titles[]={"OTWORZ 1/2","OTWORZ CALA","OTWORZ FURTKE"};
+ for(uint8_t i=0;i<3;i++){
+  lv_obj_t *b=button(tab,titles[i],gateUiConfirm);
+  lv_obj_set_height(b,51);
+  lv_obj_set_style_bg_color(b,lv_color_hex(i==2?0x245D56:0x23517D),0);
+  // button() attaches an earlier callback without user data; install the correct gated callback below.
+  lv_obj_remove_event_cb(b,gateUiConfirm);
+  lv_obj_add_event_cb(b,gateUiConfirm,LV_EVENT_CLICKED,(void*)(uintptr_t)i);
+ }
+ gateUiStatus=label(tab,"Konfiguracja URL: panel WWW, adres IP urzadzenia.");
+ label(tab,"Przyciski aktywne po skonfigurowaniu osobnych URL GET.");
+}
 static void uiSetupDashboard(){
  lv_obj_t *root=lv_screen_active();
  lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1018),0);
  lv_obj_set_style_border_width(root,0,0);
  lv_obj_set_style_pad_all(root,0,0);
- for(uint8_t i=0;i<9;i++)bladePages[i]=bladePageCreate(root);
+ for(uint8_t i=0;i<10;i++)bladePages[i]=bladePageCreate(root);
  uiTab(bladePages[0]);makeThermostat(bladePages[0]);
  uiMakeWifi(bladePages[1]);uiMakeAudio(bladePages[2]);
  uiTab(bladePages[3]);uiTitle(bladePages[3],"MENU","Ustawienia i narzedzia");
- static const char *names[]={"EKRAN I DOTYK","BATERIA","RGB","ADMIN","KAMERA"};
+ static const char *names[]={"EKRAN I DOTYK","BATERIA","RGB","ADMIN","KAMERA","BRAMA"};
  for(uint8_t i=0;i<5;i++){
   lv_obj_t *b=bladeButton(bladePages[3],names[i],(uint8_t)(i+4));
   lv_obj_set_size(b,205,40);
@@ -323,6 +363,7 @@ static void uiSetupDashboard(){
  bladeSection(bladePages[6]);uiMakeRgb(bladePages[6]);
  bladeSection(bladePages[7]);uiTab(bladePages[7]);makeAdmin(bladePages[7]);
  bladeSection(bladePages[8]);uiMakeCamera(bladePages[8]);
+ uiMakeGate(bladePages[9]);
  // Small directional preview only; no tab bar, no overlays on primary cards.
  bladeHint=lv_label_create(root);
  lv_obj_set_size(bladeHint,LCD_W-12,27);
