@@ -17,12 +17,13 @@ static size_t cameraFrameSize=0;
 static uint32_t cameraLastFrame=0;
 static const size_t cameraMaxFrame=120*1024;
 static const int cameraW=240,cameraH=180;
+static uint16_t cameraDecodedW=240,cameraDecodedH=180;
 static int cameraDraw(JPEGDRAW *d){
  if(!cameraPixels)return 0;
  for(int yy=0;yy<d->iHeight;yy++){
-  int y=d->y+yy;if(y<0||y>=cameraH)continue;
+  int y=d->y+yy;if(y<0||y>=cameraDecodedH)continue;
   for(int xx=0;xx<d->iWidth;xx++){
-   int x=d->x+xx;if(x<0||x>=cameraW)continue;
+   int x=d->x+xx;if(x<0||x>=cameraDecodedW)continue;
    cameraPixels[y*cameraW+x]=d->pPixels[yy*d->iWidth+xx];
   }
  }
@@ -72,13 +73,23 @@ static void cameraService(){
   if(cameraFrameSize>=2&&cameraFrame[cameraFrameSize-2]==0xFF&&b==0xD9){
    if(millis()-cameraLastFrame>=300 && cameraDecoder.openRAM(cameraFrame,(int)cameraFrameSize,cameraDraw)){
     int w=cameraDecoder.getWidth(),h=cameraDecoder.getHeight();
-    if(w<=cameraW&&h<=cameraH){
+    // Hardware-friendly JPEG scaling at 1/2, 1/4 or 1/8 to fit the screen.
+    int scale=1;
+    while(scale<8 && ((w+scale-1)/scale>cameraW || (h+scale-1)/scale>cameraH))scale*=2;
+    cameraDecodedW=(uint16_t)((w+scale-1)/scale);
+    cameraDecodedH=(uint16_t)((h+scale-1)/scale);
+    if(cameraDecodedW<=cameraW&&cameraDecodedH<=cameraH){
+     memset(cameraPixels,0,cameraW*cameraH*sizeof(uint16_t));
      cameraDecoder.setPixelType(RGB565_LITTLE_ENDIAN);
-     cameraDecoder.decode(0,0,0);
+     cameraDecoder.decode(0,0,scale);
+     cameraImageDescriptor.header.w=cameraW;
+     cameraImageDescriptor.header.h=cameraH;
      lv_image_set_src(cameraImageObject,&cameraImageDescriptor);
      lv_obj_invalidate(cameraImageObject);
      cameraLastFrame=millis();
-    }else if(cameraStatusObject){lv_label_set_text(cameraStatusObject,"JPEG > 240x180: zmniejsz rozdzielczosc kamery");}
+    }else if(cameraStatusObject){
+     lv_label_set_text(cameraStatusObject,"Obraz zbyt duzy (>1920x1440)");
+    }
     cameraDecoder.close();
    }
    cameraCapturing=false;cameraFrameSize=0;
