@@ -1,3 +1,15 @@
+# Status integracji Matter (etap eksperymentalny)
+
+Dodano `src/matter_thermostat.h` z rzeczywistymi wywołaniami publicznego API Arduino `MatterThermostat`: endpoint heating-only, publikacja temperatury, nastawy i trybu, odbiór zmian z kontrolera oraz synchronizacja z NVS/LVGL. Moduł wywoływany jest z `src/main.cpp`, ale **domyślnie wyłączony** przez `ENABLE_28LCD_MATTER`, ponieważ obecny `platformio.ini` używa Arduino-ESP32 2.x (espressif32@6.9.0), bez tego API.
+
+Włączenie wymaga toolchain z Arduino-ESP32 3.x, wkompilowanego Matter/CHIP, odpowiedniej tablicy partycji i certyfikatów commissioning. Nie należy po prostu dopisać `-DENABLE_28LCD_MATTER=1` w obecnym środowisku. Wtedy kompilacja będzie błędna. Nie zostały wykonane testy na urządzeniu.
+
+Przed uznaniem implementacji za kompletną trzeba sprawdzić zachowanie callbacków i odczyt/zapis klastra pod rzeczywistym kontrolerem oraz zweryfikować, czy zasoby RAM są wystarczające dla LVGL, kamer, Wi-Fi i Matter. Kod 11-cyfrowy musi zostać odczytany z danych commissioning uruchomionego firmware lub wygenerowany narzędziami Espressif z zgodnymi parametrami. Sam fakt istnienia modułu `MatterThermostat` nie oznacza możliwości parowania na obecnej wersji firmware.
+
+Źródło interfejsu API: https://docs.espressif.com/projects/arduino-esp32/en/latest/matter/ep_thermostat.html
+
+---
+
 # ESP32-S3 Matter Thermostat — implementation requirements
 
 Status: **not implemented**. Do not advertise Matter credentials or a pairing code before a functioning CHIP/Matter node exists.
