@@ -508,12 +508,13 @@ void setup(){
    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
 #endif
  lv_init();
- // Matter needs internal RAM for BLE/controller; use a single, smaller DMA draw buffer.
+ // Matter requires internal RAM for BLE/mDNS. This synchronous LovyanGFX flush
+ // does not DMA directly from the LVGL buffer, so use PSRAM here.
 #if defined(ENABLE_28LCD_MATTER) && ENABLE_28LCD_MATTER
  constexpr uint32_t bufferBytes=LCD_W*24*2;
- drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+ drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
  drawmemB=nullptr;
- if(!drawmemA){Serial.println("[fatal] No DMA draw buffer");while(true)delay(1000);}
+ if(!drawmemA){Serial.println("[fatal] No PSRAM LVGL draw buffer");while(true)delay(1000);}
 #else
  constexpr uint32_t bufferBytes=LCD_W*32*2;
  drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
