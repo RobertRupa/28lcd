@@ -486,7 +486,7 @@ void loop(){
 #endif
  lv_timer_handler();
  if(swipePending){int8_t direction=swipePending;swipePending=0;bladeNavigate(direction);}
- if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
+ if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();clockRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
  char b[96];snprintf(b,sizeof(b),"BAT ADC: %d (szac. %.2f V*)",raw,voltage);
  if(batteryLabel)lv_label_set_text(batteryLabel,b);
