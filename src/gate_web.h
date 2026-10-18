@@ -11,6 +11,7 @@ static String gateUrls[3], cameraUrls[4];
 static String cameraBasicUser[4],cameraBasicPass[4];
 static String gateWebPassword;
 static String thermostatDeviceName;
+static String suplaCaPem;
 static bool gateWebReady=false;
 static bool gateBusy=false;
 static uint32_t gateLastAction=0;
@@ -56,9 +57,11 @@ static bool gateRequest(uint8_t index,String &message){
  bool ok=false;
  if(url.startsWith("https://")){
    WiFiClientSecure tls;
-   // Validate certificate with current public CA bundle / trust anchor before production.
-   // Explicitly fail closed until a trust anchor is provisioned.
-   message="HTTPS wymaga skonfigurowanego zaufanego CA";
+   if(suplaCaPem.isEmpty()){message="Dodaj certyfikat CA dla HTTPS w WebGUI";} else {
+     tls.setCACert(suplaCaPem.c_str());
+     if(client.begin(tls,url)){int code=client.GET();ok=code>=200&&code<300;message="HTTPS "+String(code);client.end();}
+     else message="Blad TLS lub URL";
+   }
  } else {
    if(client.begin(url)){int code=client.GET();ok=code>=200&&code<300;message="HTTP "+String(code);client.end();}
    else message="Niepoprawny URL";
@@ -77,7 +80,7 @@ static void gatePage(){
  for(int i=0;i<3;i++){page+="<form method='POST' action='/action'><input type='hidden' name='idx' value='"+String(i)+"'><button onclick='return confirm(&quot;Wykonac akcje?&quot;)'>"+gateEsc(gateNames[i])+"</button></form>";}
  page+=F("</section><form method='POST' action='/save'><section><h2>GET URL akcji</h2><small>Dozwolony HTTP na prywatny IPv4 lub HTTPS svr34.supla.org (wymaga CA). Kazdy przycisk ma oddzielny URL.</small>");
  for(int i=0;i<3;i++)page+="<label>"+gateEsc(gateNames[i])+"<input name='gate"+String(i)+"' maxlength='512' value='"+gateEsc(gateUrls[i])+"'></label>";
- page+=F("</section><section><h2>Kamery</h2>");
+ page+=F("</section><section><h2>HTTPS SUPLA Direct</h2><p>Ustaw zaufany certyfikat CA PEM dla svr34.supla.org. Bez CA akcje HTTPS sa blokowane.</p><label>CA PEM (wklej tylko przy zmianie)<textarea name='suplaCA' rows='6' maxlength='4096' placeholder='-----BEGIN CERTIFICATE-----'></textarea></label><small>Certyfikat serwera bedzie weryfikowany. Nie wklejaj klucza prywatnego ani tokenow.</small></section><section><h2>Kamery</h2>");
  for(int i=0;i<4;i++){
   page+="<label>Kamera "+String(i+1)+" URL<input name='cam"+String(i)+"' maxlength='240' value='"+gateEsc(cameraUrls[i])+"'></label>";
   page+="<label>Basic Auth login<input name='cuser"+String(i)+"' maxlength='48' value='"+gateEsc(cameraBasicUser[i])+"'></label>";
@@ -112,6 +115,10 @@ static void gateSave(){
  String newGate[3],newCam[4];
  for(int i=0;i<3;i++){newGate[i]=gateWeb.arg("gate"+String(i));newGate[i].trim();if(newGate[i].length()&&!gateIsLanUrl(newGate[i])){gateWeb.send(400,"text/plain","Niedozwolony URL bramy");return;}}
  for(int i=0;i<4;i++){newCam[i]=gateWeb.arg("cam"+String(i));newCam[i].trim();if(newCam[i].length()&&!gateCameraUrlAllowed(newCam[i])){gateWeb.send(400,"text/plain","Niedozwolony URL kamery");return;}}
+ String newCa=gateWeb.arg("suplaCA");newCa.trim();
+ if(newCa.length() && (newCa.length()>4096 || !newCa.startsWith("-----BEGIN CERTIFICATE-----") || newCa.indexOf("-----END CERTIFICATE-----")<0)){
+   gateWeb.send(400,"text/plain","Niepoprawny certyfikat CA PEM");return;
+ }
  String newMatterName=gateWeb.arg("matterName");newMatterName.trim();
  if(newMatterName.isEmpty()||newMatterName.length()>40){gateWeb.send(400,"text/plain","Nazwa termostatu: 1-40 znakow");return;}
  float target=gateWeb.arg("targetTemp").toFloat();
@@ -156,6 +163,7 @@ static void gateSave(){
    else lv_obj_clear_state(heatSwitch,LV_STATE_CHECKED);
  }
  thermostatRefresh();
+ if(newCa.length()){suplaCaPem=newCa;gatePrefs.putString("suplaCA",suplaCaPem);}
  thermostatDeviceName=newMatterName;gatePrefs.putString("mattername",thermostatDeviceName);
  if(newPassword.length()){gateWebPassword=newPassword;gatePrefs.putString("webpass",gateWebPassword);}
  gateWeb.sendHeader("Location","/");gateWeb.send(303,"text/plain","OK");
@@ -163,6 +171,7 @@ static void gateSave(){
 static void gateWebBegin(){
  gatePrefs.begin("gatecfg",false);
  thermostatDeviceName=gatePrefs.getString("mattername","28LCD Thermostat");
+ suplaCaPem=gatePrefs.getString("suplaCA","");
  for(int i=0;i<3;i++)gateUrls[i]=(gatePrefs.isKey(("gate"+String(i)).c_str())?gatePrefs.getString(("gate"+String(i)).c_str(),""):String(""));
  for(int i=0;i<4;i++){
   String fallback="http://192.168.68."+String(51+i)+"/cgi-bin/mjpg/video.cgi?channel=1&subtype=1";
