@@ -98,6 +98,8 @@ static void audioFinishRecord(){
 static bool audioStartRecord(){
  if(!sdOk||!codecOk||audioIsRecording)return false;
  audioStop();
+ // ES8311 analogue microphone input and ADC gain.
+ if(!codecReg(0x14,0x1A)||!codecReg(0x16,0x03)||!codecReg(0x17,0xC8))return false;
  audioRecording=SD_MMC.open("/record.wav","w");
  if(!audioRecording)return false;
  audioRecording.seek(0);audioWriteHeader(audioRecording,0);audioRecording.seek(44);
