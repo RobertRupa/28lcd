@@ -24,6 +24,7 @@ static uint32_t lastUpdate=0;
 static uint8_t ledColor=0;
 static lv_obj_t *statusLabel=nullptr,*sdLabel=nullptr,*wifiLabel=nullptr,*bleLabel=nullptr,*batteryLabel=nullptr;
 static bool sdBusy=false;
+static Preferences wifiPrefs;
 static uint32_t wifiRetryAt=0;
 static bool ntpStarted=false;
 static void wifiAutoService(){
@@ -38,7 +39,6 @@ static void wifiAutoService(){
 }
 
 static Preferences audioPrefs;
-static Preferences wifiPrefs;
 static uint8_t masterVolume=35; // 0..100%; conservative default
 static uint8_t masterVolumePending=35;
 static uint32_t masterVolumeChangedAt=0;
