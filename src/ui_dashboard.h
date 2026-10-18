@@ -139,23 +139,62 @@ static void uiMakeAudio(lv_obj_t *tab){
  audioInfoLabel=label(tab,"SD: wybierz plik lub nagraj /record.wav (10s)");
  uiAudioRefreshFiles(nullptr);
 }
-static lv_obj_t *cameraUrlInput=nullptr;
+static lv_obj_t *cameraSelector=nullptr,*cameraUserInput=nullptr,*cameraPassInput=nullptr;
+static Preferences cameraPrefs;
+static uint8_t cameraIndex=0;
+static void uiCameraSelect(lv_event_t *){
+ cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
+ char msg[80];snprintf(msg,sizeof(msg),"Kamera %u: 192.168.68.%u",cameraIndex+1,51+cameraIndex);
+ if(cameraStatusObject)lv_label_set_text(cameraStatusObject,msg);
+}
+static void uiCameraCredentialsSave(lv_event_t *){
+ String user=lv_textarea_get_text(cameraUserInput);
+ String pass=lv_textarea_get_text(cameraPassInput);
+ if(user.length()>32||pass.length()>64){
+  lv_label_set_text(cameraStatusObject,"Zbyt dlugie dane dostepu");return;
+ }
+ cameraPrefs.putString("user",user);
+ cameraPrefs.putString("pass",pass);
+ lv_textarea_set_text(cameraPassInput,"");
+ lv_label_set_text(cameraStatusObject,"Dane dostepu zapisane lokalnie (NVS)");
+}
 static void uiCameraStart(lv_event_t *){
- if(!cameraStart(lv_textarea_get_text(cameraUrlInput))&&cameraStatusObject)
-  lv_label_set_text(cameraStatusObject,"Connection failed: check Wi-Fi and HTTP URL");
+ cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
+ char url[125];
+ snprintf(url,sizeof(url),"http://192.168.68.%u/cgi-bin/mjpg/video.cgi?channel=1&subtype=1",51+cameraIndex);
+ String user=cameraPrefs.getString("user","");
+ String pass=cameraPrefs.getString("pass","");
+ if(!cameraStart(url,user.c_str(),pass.c_str())&&cameraStatusObject)
+  lv_label_set_text(cameraStatusObject,"Brak polaczenia: sprawdz Wi-Fi, MJPEG i login");
 }
 static void uiCameraStop(lv_event_t *){cameraStop();}
 static void uiMakeCamera(lv_obj_t *tab){
- uiTab(tab);uiTitle(tab,"CCTV","HTTP MJPEG / JPEG (240x180)");
- cameraUrlInput=lv_textarea_create(tab);lv_obj_set_width(cameraUrlInput,205);
- lv_textarea_set_one_line(cameraUrlInput,true);
- lv_textarea_set_placeholder_text(cameraUrlInput,"http://camera/mjpeg");
- lv_obj_add_event_cb(cameraUrlInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
- lv_obj_add_event_cb(cameraUrlInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
- button(tab,"Start stream",uiCameraStart);
- button(tab,"Stop stream",uiCameraStop);
- cameraStatusObject=label(tab,"Only plain HTTP; JPEG <=240x180");
+ uiTab(tab);uiTitle(tab,"KAMERY IP","Wybierz strumien MJPEG");
+ cameraPrefs.begin("ipcamera",false);
+ cameraSelector=lv_dropdown_create(tab);
+ lv_obj_set_width(cameraSelector,205);
+ lv_dropdown_set_options(cameraSelector,
+  "Kamera 1  /  .51\nKamera 2  /  .52\nKamera 3  /  .53\nKamera 4  /  .54");
+ lv_obj_add_event_cb(cameraSelector,uiCameraSelect,LV_EVENT_VALUE_CHANGED,nullptr);
+ cameraUserInput=lv_textarea_create(tab);lv_obj_set_width(cameraUserInput,205);
+ lv_textarea_set_one_line(cameraUserInput,true);
+ lv_textarea_set_placeholder_text(cameraUserInput,"Login kamer");
+ String username=cameraPrefs.getString("user","");
+ lv_textarea_set_text(cameraUserInput,username.c_str());
+ cameraPassInput=lv_textarea_create(tab);lv_obj_set_width(cameraPassInput,205);
+ lv_textarea_set_one_line(cameraPassInput,true);
+ lv_textarea_set_password_mode(cameraPassInput,true);
+ lv_textarea_set_placeholder_text(cameraPassInput,"Haslo (nie wyswietlane)");
+ lv_obj_add_event_cb(cameraUserInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
+ lv_obj_add_event_cb(cameraUserInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
+ lv_obj_add_event_cb(cameraPassInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
+ lv_obj_add_event_cb(cameraPassInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
+ button(tab,"Zapisz dane kamer",uiCameraCredentialsSave);
+ button(tab,"Uruchom wybrana",uiCameraStart);
+ button(tab,"Zatrzymaj",uiCameraStop);
+ cameraStatusObject=label(tab,"192.168.68.51-54 / MJPEG subtype=1");
  cameraImageObject=lv_image_create(tab);
+ label(tab,"Jeden podglad na raz. JPEG maks. 240x180.");
 }
 static void uiMakeDisplay(lv_obj_t *tab){
  uiTab(tab);uiTitle(tab,"DISPLAY","Ekran i dotyk");
