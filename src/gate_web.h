@@ -88,7 +88,7 @@ static void gatePage(){
  page+=F("'></label><label>Jasnosc LED 0-255<input type='number' name='ledBri' min='0' max='255' step='1' value='");
  page+=String(ledBrightness);
  page+=F("'></label><p>Bateria: napiecie orientacyjne z ADC GPIO9. Poziom procentowy i stan ladowania niedostepne bez kalibracji/hardware.</p></section>");
- page+=F("<section><h2>Administrator</h2><label>Nowe haslo WWW (puste = bez zmian)<input name='webPass' type='password' minlength='12' autocomplete='new-password'></label></section><button>Zapisz ustawienia</button></form><script>setInterval(async()=>{try{const r=await fetch('/status');if(r.ok){let j=await r.json();document.getElementById('status').textContent='Temp: '+j.temperature+' C ('+j.source+') / Grzanie: '+(j.heating?'TAK':'NIE')+' / Wi-Fi: '+j.ip;}}catch(e){}},2000)</script></html>");
+ page+=F("<section><h2>Administrator</h2><label>Nowe haslo WWW (puste = bez zmian)<input name='webPass' type='password' minlength='12' autocomplete='new-password'></label></section><button>Zapisz ustawienia</button></form><script>setInterval(async()=>{try{const r=await fetch('/status');if(r.ok){let j=await r.json();document.getElementById('status').textContent='Temp: '+j.temperature+' C ('+j.source+')+' / Cel: '+j.target+' C / Grzanie: '+(j.heating?'TAK':'NIE')+' / Bateria ADC: '+j.battery_voltage_estimate+' V (szacunek) / Wi-Fi: '+j.ip;}}catch(e){}},2000)</script></html>");
  gateWeb.send(200,"text/html; charset=utf-8",page);
 }
 static void gateSave(){
