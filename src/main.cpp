@@ -466,9 +466,12 @@ void setup(){
  drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
  drawmemB=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
  if(!drawmemA||!drawmemB){Serial.println("[fatal] No DMA draw buffers");while(true)delay(1000);}
+ Serial.printf("[INIT] LVGL free heap=%u, psram=%u\\n",(unsigned)ESP.getFreeHeap(),(unsigned)ESP.getFreePsram());
  lvDisplay=lv_display_create(LCD_W,LCD_H);
+ if(!lvDisplay){Serial.println("[FATAL] lv_display_create returned null");while(true)delay(1000);}
  lv_display_set_color_format(lvDisplay,LV_COLOR_FORMAT_RGB565);
  lv_theme_t *darkTheme=lv_theme_default_init(lvDisplay,lv_color_hex(0x278DDA),lv_color_hex(0x42BFA9),true,&lv_font_montserrat_16);
+ if(!darkTheme){Serial.println("[FATAL] lv_theme_default_init returned null");while(true)delay(1000);}
  lv_display_set_theme(lvDisplay,darkTheme);
  lv_display_set_flush_cb(lvDisplay,flushCb);
  lv_display_set_buffers(lvDisplay,drawmemA,drawmemB,bufferBytes,LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -478,8 +481,11 @@ void setup(){
  lv_indev_set_display(touch,lvDisplay);
  const esp_timer_create_args_t args={.callback=&tick,.arg=nullptr,.dispatch_method=ESP_TIMER_TASK,.name="lv_tick",.skip_unhandled_events=true};
  esp_timer_handle_t th;esp_timer_create(&args,&th);esp_timer_start_periodic(th,1000);
+ Serial.println("[INIT] Web begin");
  gateWebBegin();
+ Serial.printf("[INIT] UI begin, heap=%u\\n",(unsigned)ESP.getFreeHeap());
  setupUI();
+ Serial.printf("[INIT] UI ready, heap=%u\\n",(unsigned)ESP.getFreeHeap());
 #ifdef ENABLE_COPROCESSOR_UART
  coproBegin();
 #endif
