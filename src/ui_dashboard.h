@@ -387,7 +387,7 @@ static void uiSetupDashboard(){
  lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1018),0);
  lv_obj_set_style_border_width(root,0,0);
  lv_obj_set_style_pad_all(root,0,0);
- for(uint8_t i=0;i<10;i++)bladePages[i]=bladePageCreate(root);
+ for(uint8_t i=0;i<11;i++)bladePages[i]=bladePageCreate(root);
  uiTab(bladePages[0]);makeThermostat(bladePages[0]);
  uiMakeWifi(bladePages[1]);uiMakeAudio(bladePages[2]);
  uiTab(bladePages[3]);uiTitle(bladePages[3],"MENU","Ustawienia i narzedzia");
@@ -416,6 +416,17 @@ static void uiSetupDashboard(){
  lv_obj_set_style_radius(bladeHint,7,0);
  lv_obj_set_style_pad_top(bladeHint,4,0);
  bladeShow(0);
+ fpsOverlay=lv_label_create(root);
+ lv_label_set_text(fpsOverlay,"0 FPS");
+ lv_obj_set_pos(fpsOverlay,3,3);
+ lv_obj_set_style_text_font(fpsOverlay,&lv_font_montserrat_14,0);
+ lv_obj_set_style_text_color(fpsOverlay,lv_color_hex(0xFFFFFF),0);
+ lv_obj_set_style_bg_color(fpsOverlay,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_bg_opa(fpsOverlay,LV_OPA_COVER,0);
+ lv_obj_set_style_radius(fpsOverlay,5,0);
+ lv_obj_set_style_pad_all(fpsOverlay,3,0);
+ lv_obj_remove_flag(fpsOverlay,LV_OBJ_FLAG_CLICKABLE);
+ lv_obj_move_foreground(fpsOverlay);
  statusUpdate();
 }
 static void uiPowerRefresh(){
