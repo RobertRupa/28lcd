@@ -218,7 +218,7 @@ static void makeThermostat(lv_obj_t *tab){
  lv_obj_set_style_text_font(head,&lv_font_montserrat_14,0);
  lv_obj_t *card=lv_obj_create(tab);
  lv_obj_set_width(card,LV_PCT(100));
- lv_obj_set_height(card,170);
+ lv_obj_set_height(card,128);
  lv_obj_set_style_radius(card,18,0);
  lv_obj_set_style_border_width(card,1,0);
  lv_obj_set_style_border_color(card,lv_color_hex(0x26344A),0);
@@ -226,7 +226,7 @@ static void makeThermostat(lv_obj_t *tab){
  lv_obj_set_style_pad_all(card,13,0);
  lv_obj_clear_flag(card,LV_OBJ_FLAG_SCROLLABLE);
  lv_obj_set_flex_flow(card,LV_FLEX_FLOW_COLUMN);
- lv_obj_set_style_pad_row(card,8,0);
+ lv_obj_set_style_pad_row(card,5,0);
  lv_obj_t *subtitle=lv_label_create(card);
  lv_label_set_text(subtitle,"TEMPERATURA");
  lv_obj_set_style_text_color(subtitle,lv_color_hex(0x9AACBE),0);
@@ -236,7 +236,7 @@ static void makeThermostat(lv_obj_t *tab){
  heatLabel=lv_label_create(card);lv_label_set_text(heatLabel,"GRZANIE: OFF");
  lv_obj_set_style_text_color(heatLabel,lv_color_hex(0x6EE7B7),0);
  lv_obj_t *set=lv_obj_create(tab);
- lv_obj_set_width(set,LV_PCT(100));lv_obj_set_height(set,94);
+ lv_obj_set_width(set,LV_PCT(100));lv_obj_set_height(set,82);
  lv_obj_set_style_radius(set,16,0);
  lv_obj_set_style_bg_color(set,lv_color_hex(0x172234),0);
  lv_obj_set_style_border_width(set,0,0);
