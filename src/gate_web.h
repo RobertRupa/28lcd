@@ -9,6 +9,7 @@ static WebServer gateWeb(80);
 static String gateUrls[3], cameraUrls[4];
 static String cameraBasicUser[4],cameraBasicPass[4];
 static String gateWebPassword;
+static String thermostatDeviceName;
 static bool gateWebReady=false;
 static bool gateBusy=false;
 static uint32_t gateLastAction=0;
@@ -69,6 +70,9 @@ static void gatePage(){
  }
  page+=F("</section><section><h2>Siec Wi-Fi</h2><label>SSID<input name='ssid' maxlength='32' value='");
  page+=gateEsc(wifiPrefs.getString("ssid",""));page+=F("'></label><label>Nowe haslo Wi-Fi (puste = bez zmian)<input name='wifiPass' type='password' maxlength='63' autocomplete='new-password'></label></section>");
+ page+=F("<section><h2>Termostat / Matter over Wi-Fi</h2><label>Nazwa urzadzenia<input name='matterName' maxlength='40' value='");
+ page+=gateEsc(thermostatDeviceName);
+ page+=F("'></label><p>Transport: Wi-Fi 2.4 GHz / IPv6</p><p>Matter: <strong>niezaimplementowany w tym firmware</strong></p><p>Kod parowania, QR, discriminator i otwarcie commissioning window beda dostepne dopiero po integracji ESP-Matter.</p><small>Nie wpisuj danych Thread ani kodow parowania recznie. Samo zapisanie tej nazwy nie tworzy urzadzenia Matter.</small></section>");
  page+=F("<section><h2>Administrator</h2><label>Nowe haslo WWW (puste = bez zmian)<input name='webPass' type='password' minlength='12' autocomplete='new-password'></label></section><button>Zapisz ustawienia</button></form><script>setInterval(async()=>{try{const r=await fetch('/status');if(r.ok){let j=await r.json();document.getElementById('status').textContent='Temp: '+j.temperature+' C ('+j.source+') / Grzanie: '+(j.heating?'TAK':'NIE')+' / Wi-Fi: '+j.ip;}}catch(e){}},2000)</script></html>");
  gateWeb.send(200,"text/html; charset=utf-8",page);
 }
@@ -77,6 +81,8 @@ static void gateSave(){
  String newGate[3],newCam[4];
  for(int i=0;i<3;i++){newGate[i]=gateWeb.arg("gate"+String(i));newGate[i].trim();if(newGate[i].length()&&!gateIsLanUrl(newGate[i])){gateWeb.send(400,"text/plain","Niedozwolony URL bramy");return;}}
  for(int i=0;i<4;i++){newCam[i]=gateWeb.arg("cam"+String(i));newCam[i].trim();if(newCam[i].length()&&!gateCameraUrlAllowed(newCam[i])){gateWeb.send(400,"text/plain","Niedozwolony URL kamery");return;}}
+ String newMatterName=gateWeb.arg("matterName");newMatterName.trim();
+ if(newMatterName.isEmpty()||newMatterName.length()>40){gateWeb.send(400,"text/plain","Nazwa termostatu: 1-40 znakow");return;}
  String newPassword=gateWeb.arg("webPass");
  if(newPassword.length()&&(newPassword.length()<12||newPassword.length()>64)){gateWeb.send(400,"text/plain","Haslo WWW musi miec 12-64 znakow");return;}
  for(int i=0;i<3;i++){gateUrls[i]=newGate[i];gatePrefs.putString(("gate"+String(i)).c_str(),gateUrls[i]);}
@@ -91,11 +97,13 @@ static void gateSave(){
  String ssid=gateWeb.arg("ssid"),pass=gateWeb.arg("wifiPass");
  if(ssid.length()<=32&&!ssid.isEmpty())wifiPrefs.putString("ssid",ssid);
  if(!pass.isEmpty()&&pass.length()<=63)wifiPrefs.putString("password",pass);
+ thermostatDeviceName=newMatterName;gatePrefs.putString("mattername",thermostatDeviceName);
  if(newPassword.length()){gateWebPassword=newPassword;gatePrefs.putString("webpass",gateWebPassword);}
  gateWeb.sendHeader("Location","/");gateWeb.send(303,"text/plain","OK");
 }
 static void gateWebBegin(){
  gatePrefs.begin("gatecfg",false);
+ thermostatDeviceName=gatePrefs.getString("mattername","28LCD Thermostat");
  for(int i=0;i<3;i++)gateUrls[i]=(gatePrefs.isKey(("gate"+String(i)).c_str())?gatePrefs.getString(("gate"+String(i)).c_str(),""):String(""));
  for(int i=0;i<4;i++){
   String fallback="http://192.168.68."+String(51+i)+"/cgi-bin/mjpg/video.cgi?channel=1&subtype=1";
