@@ -64,6 +64,8 @@ static uint32_t swipeStartMs=0;
 static bool swipeTracking=false;
 static int16_t swipeLastY=0,swipeLastX=0;
 static int8_t swipePending=0;
+static int16_t edgePull=0;
+static void edgePullUpdate();
 
 static bool i2cPing(uint8_t addr){Wire.beginTransmission(addr);return Wire.endTransmission()==0;}
 static bool codecReg(uint8_t r,uint8_t v){Wire.beginTransmission(CODEC_ADDR);Wire.write(r);Wire.write(v);return Wire.endTransmission()==0;}
@@ -107,6 +109,10 @@ static void inputCb(lv_indev_t*,lv_indev_data_t *d){
  if(touchRead(x,y)){
   d->state=LV_INDEV_STATE_PRESSED;d->point.x=x;d->point.y=y;
   swipeLastX=x;swipeLastY=y;
+  if(swipeStartX<26 || swipeStartX>=LCD_W-26){
+   int delta=x-swipeStartX;
+   edgePull=(abs(delta)>8 && abs(delta)>abs(y-swipeStartY))?constrain(delta,-100,100):0;
+  }
   if(!swipeTracking){swipeTracking=true;swipeStartX=x;swipeStartY=y;swipeStartMs=millis();}
  }else{
   d->state=LV_INDEV_STATE_RELEASED;
@@ -116,7 +122,7 @@ static void inputCb(lv_indev_t*,lv_indev_data_t *d){
    int32_t dy=swipeLastY-swipeStartY;
    if(abs(dx)>65 && abs(dx)>abs(dy)*2 && millis()-swipeStartMs<1100)
     swipePending=(dx<0)?1:-1;
-   swipeTracking=false;
+   swipeTracking=false;edgePull=0;
   }
  }
 }
@@ -505,7 +511,7 @@ void loop(){
   thermostatRefresh();
  }
 #endif
- lv_timer_handler();fpsUpdate();
+ lv_timer_handler();edgePullUpdate();fpsUpdate();
  if(swipePending){int8_t direction=swipePending;swipePending=0;bladeNavigate(direction);}
  if(millis()-lastUpdate>500){lastUpdate=millis();
  if(bladePage==7)statusUpdate();
