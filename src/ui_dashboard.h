@@ -202,7 +202,7 @@ static void bladeShow(uint8_t page){
  if(bladeHint){
   char hint[88];
   const uint8_t prev=(page+8)%9,next=(page+1)%9;
-  snprintf(hint,sizeof(hint),"GORA: %s     DOL: %s",pageNames[prev],pageNames[next]);
+  snprintf(hint,sizeof(hint),"GORA: %s  |  DOL: %s",pageNames[next],pageNames[prev]);
   lv_label_set_text(bladeHint,hint);
  }
 }
