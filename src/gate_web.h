@@ -79,10 +79,10 @@ static void gateSave(){
 }
 static void gateWebBegin(){
  gatePrefs.begin("gatecfg",false);
- for(int i=0;i<3;i++)gateUrls[i]=gatePrefs.getString(("gate"+String(i)).c_str(),"");
+ for(int i=0;i<3;i++)gateUrls[i]=(gatePrefs.isKey(("gate"+String(i)).c_str())?gatePrefs.getString(("gate"+String(i)).c_str(),""):String(""));
  for(int i=0;i<4;i++){
   String fallback="http://192.168.68."+String(51+i)+"/cgi-bin/mjpg/video.cgi?channel=1&subtype=1";
-  cameraUrls[i]=gatePrefs.getString(("cam"+String(i)).c_str(),fallback);
+  cameraUrls[i]=(gatePrefs.isKey(("cam"+String(i)).c_str())?gatePrefs.getString(("cam"+String(i)).c_str(),fallback):fallback);
  }
  gateWebPassword=gatePrefs.getString("webpass","");
  if(gateWebPassword.isEmpty()){
@@ -90,6 +90,9 @@ static void gateWebBegin(){
   gateWebPassword=key;gatePrefs.putString("webpass",gateWebPassword);
   Serial.printf("[WEB] Pierwsze haslo admin: %s (zapisane NVS)\n",key);
  }
+ Serial.println("[WEB] Administrator: admin");
+ Serial.println("[WEB] Haslo administratora zapisane w NVS (nie jest wyswietlane)");
+ Serial.println("[WEB] Panel WWW: http://<IP-ESP32>/");
  gateWeb.on("/",HTTP_GET,gatePage);
  gateWeb.on("/save",HTTP_POST,gateSave);
  gateWeb.on("/action",HTTP_POST,[](){
