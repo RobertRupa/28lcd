@@ -84,8 +84,8 @@ static void inputCb(lv_indev_t*,lv_indev_data_t *d){
    // A deliberate vertical gesture; horizontal sliders do not trigger navigation.
    int32_t dx=swipeLastX-swipeStartX;
    int32_t dy=swipeLastY-swipeStartY;
-   if(abs(dy)>75 && abs(dy)>abs(dx)*2 && millis()-swipeStartMs<1100)
-    swipePending=(dy<0)?1:-1;
+   if(abs(dx)>65 && abs(dx)>abs(dy)*2 && millis()-swipeStartMs<1100)
+    swipePending=(dx<0)?1:-1;
    swipeTracking=false;
   }
  }
