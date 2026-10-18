@@ -62,7 +62,7 @@ static bool touchRead(int32_t &x,int32_t &y){
 static void flushCb(lv_display_t *d,const lv_area_t *a,uint8_t *px){
  uint32_t w=a->x2-a->x1+1,h=a->y2-a->y1+1;
  lcd.startWrite();lcd.setAddrWindow(a->x1,a->y1,w,h);
- lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_display_flush_ready(d);
+ lv_draw_sw_rgb565_swap(px,w*h);lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_display_flush_ready(d);
 }
 static void inputCb(lv_indev_t*,lv_indev_data_t *d){
  int32_t x=0,y=0;
@@ -401,6 +401,8 @@ void setup(){
  if(!drawmemA||!drawmemB){Serial.println("[fatal] No DMA draw buffers");while(true)delay(1000);}
  lvDisplay=lv_display_create(LCD_W,LCD_H);
  lv_display_set_color_format(lvDisplay,LV_COLOR_FORMAT_RGB565);
+ lv_theme_t *darkTheme=lv_theme_default_init(lvDisplay,lv_color_hex(0x278DDA),lv_color_hex(0x42BFA9),true,&lv_font_montserrat_14);
+ lv_display_set_theme(lvDisplay,darkTheme);
  lv_display_set_flush_cb(lvDisplay,flushCb);
  lv_display_set_buffers(lvDisplay,drawmemA,drawmemB,bufferBytes,LV_DISPLAY_RENDER_MODE_PARTIAL);
  lv_indev_t *touch=lv_indev_create();
