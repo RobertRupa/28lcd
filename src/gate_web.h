@@ -32,6 +32,10 @@ static bool gateIsLanUrl(const String &url){
  if(!ip.fromString(host))return false;
  return ip[0]==10||(ip[0]==192&&ip[1]==168)||(ip[0]==172&&ip[1]>=16&&ip[1]<=31);
 }
+static bool gateCameraUrlAllowed(const String &raw){
+ String clean,u,p;
+ return cameraResolveUrl(raw,clean,u,p)&&gateIsLanUrl(clean);
+}
 static bool gateRequest(uint8_t index,String &message){
  if(index>=3||gateBusy||millis()-gateLastAction<1500){message="Zajete / odczekaj";return false;}
  String url=gateUrls[index];
@@ -72,7 +76,7 @@ static void gateSave(){
  if(!gateAuthorized())return;
  String newGate[3],newCam[4];
  for(int i=0;i<3;i++){newGate[i]=gateWeb.arg("gate"+String(i));newGate[i].trim();if(newGate[i].length()&&!gateIsLanUrl(newGate[i])){gateWeb.send(400,"text/plain","Niedozwolony URL bramy");return;}}
- for(int i=0;i<4;i++){newCam[i]=gateWeb.arg("cam"+String(i));newCam[i].trim();if(newCam[i].length()&&!gateIsLanUrl(newCam[i])){gateWeb.send(400,"text/plain","Niedozwolony URL kamery");return;}}
+ for(int i=0;i<4;i++){newCam[i]=gateWeb.arg("cam"+String(i));newCam[i].trim();if(newCam[i].length()&&!gateCameraUrlAllowed(newCam[i])){gateWeb.send(400,"text/plain","Niedozwolony URL kamery");return;}}
  String newPassword=gateWeb.arg("webPass");
  if(newPassword.length()&&(newPassword.length()<12||newPassword.length()>64)){gateWeb.send(400,"text/plain","Haslo WWW musi miec 12-64 znakow");return;}
  for(int i=0;i<3;i++){gateUrls[i]=newGate[i];gatePrefs.putString(("gate"+String(i)).c_str(),gateUrls[i]);}
@@ -121,10 +125,13 @@ static void gateWebBegin(){
   if(idx<0||idx>=4){gateWeb.send(400,"text/plain","Indeks kamery");return;}
   // Test saved connection settings; no password or URL echo in response.
   String u=cameraUrls[idx];
-  if(!gateIsLanUrl(u)){gateWeb.send(400,"text/plain","Nieprawidlowy lokalny URL");return;}
+  if(!gateCameraUrlAllowed(u)){gateWeb.send(400,"text/plain","Nieprawidlowy lokalny URL");return;}
+  String clean,parsedUser,parsedPass;
+  cameraResolveUrl(u,clean,parsedUser,parsedPass);
+  if(cameraBasicUser[idx].length()){parsedUser=cameraBasicUser[idx];parsedPass=cameraBasicPass[idx];}
   HTTPClient probe;probe.setTimeout(2500);
-  if(!probe.begin(u)){gateWeb.send(502,"text/plain","Blad inicjalizacji HTTP");return;}
-  if(cameraBasicUser[idx].length())probe.setAuthorization(cameraBasicUser[idx].c_str(),cameraBasicPass[idx].c_str());
+  if(!probe.begin(clean)){gateWeb.send(502,"text/plain","Blad inicjalizacji HTTP");return;}
+  if(parsedUser.length())probe.setAuthorization(parsedUser.c_str(),parsedPass.c_str());
   int code=probe.GET();probe.end();
   gateWeb.send(200,"text/plain","Kamera "+String(idx+1)+": HTTP "+String(code));
  });
