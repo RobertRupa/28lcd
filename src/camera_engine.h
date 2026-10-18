@@ -1,6 +1,7 @@
 #pragma once
 #include <HTTPClient.h>
 #include <JPEGDEC.h>
+#include <MD5Builder.h>
 // HTTP multipart MJPEG or repeated JPEG endpoint; image decoded into PSRAM LVGL buffer.
 // Designed for low frame rates (1-3 FPS). HTTPS/RTSP/H264 not supported.
 static HTTPClient cameraHttp;
@@ -51,6 +52,44 @@ static bool cameraResolveUrl(const String &raw,String &clean,String &user,String
  }
  return true;
 }
+static String cameraDigestParam(const String &h,const char *key){
+ String token=String(key)+"=";int p=h.indexOf(token);if(p<0)return "";
+ p+=token.length();if(p>=(int)h.length())return "";
+ if(h[p]=='"'){int end=h.indexOf('"',p+1);return end<0?"":h.substring(p+1,end);}
+ int end=h.indexOf(',',p);return h.substring(p,end<0?h.length():end);
+}
+static String cameraMd5(const String &input){
+ MD5Builder hash;hash.begin();hash.add(input);hash.calculate();return hash.toString();
+}
+static int cameraAuthenticatedGet(HTTPClient &client,const String &url,const String &user,const String &password){
+ // Probe the RFC 7616 challenge. Only MD5 + qop=auth is handled.
+ String challenge;
+ if(user.length()){
+  HTTPClient probe;probe.setTimeout(1800);
+  const char *headers[]={"WWW-Authenticate"};probe.collectHeaders(headers,1);
+  if(probe.begin(url)){int status=probe.GET();if(status==401)challenge=probe.header("WWW-Authenticate");probe.end();}
+ }
+ if(!client.begin(url))return -1;
+ client.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+ if(challenge.startsWith("Digest ")){
+  String realm=cameraDigestParam(challenge,"realm"),nonce=cameraDigestParam(challenge,"nonce");
+  String qop=cameraDigestParam(challenge,"qop"),algorithm=cameraDigestParam(challenge,"algorithm");
+  String opaque=cameraDigestParam(challenge,"opaque");
+  if(!realm.length()||!nonce.length()||(algorithm.length()&&!algorithm.equalsIgnoreCase("MD5"))||
+     (qop.length()&&qop.indexOf("auth")<0))return 401;
+  String uri=url.substring(url.indexOf('/',7));
+  if(uri.length()==0)uri="/";
+  String nc="00000001",cnonce=String((uint32_t)esp_random(),HEX);
+  String ha1=cameraMd5(user+":"+realm+":"+password);
+  String ha2=cameraMd5("GET:"+uri);
+  String response=qop.length()?cameraMd5(ha1+":"+nonce+":"+nc+":"+cnonce+":auth:"+ha2):cameraMd5(ha1+":"+nonce+":"+ha2);
+  String auth="Digest username=\""+user+"\", realm=\""+realm+"\", nonce=\""+nonce+"\", uri=\""+uri+"\", response=\""+response+"\"";
+  if(qop.length())auth+=", qop=auth, nc="+nc+", cnonce=\""+cnonce+"\"";
+  if(opaque.length())auth+=", opaque=\""+opaque+"\"";
+  client.addHeader("Authorization",auth);
+ }else if(user.length())client.setAuthorization(user.c_str(),password.c_str());
+ return client.GET();
+}
 static bool cameraStart(const char *url,const char *username=nullptr,const char *password=nullptr){
  cameraStop();
  if(WiFi.status()!=WL_CONNECTED){cameraLastError="Wi-Fi offline";return false;}
@@ -66,10 +105,7 @@ static bool cameraStart(const char *url,const char *username=nullptr,const char 
  cameraImageDescriptor.data_size=cameraW*cameraH*sizeof(uint16_t);
  cameraImageDescriptor.data=(const uint8_t*)cameraPixels;
  cameraHttp.setTimeout(1000);
- if(!cameraHttp.begin(clean)){cameraLastError="HTTP begin failed";return false;}
- cameraHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
- if(user.length())cameraHttp.setAuthorization(user.c_str(),pass.c_str());
- int httpCode=cameraHttp.GET();
+ int httpCode=cameraAuthenticatedGet(cameraHttp,clean,user,pass);
  if(httpCode!=HTTP_CODE_OK){cameraLastError="HTTP "+String(httpCode)+(httpCode<0?" "+cameraHttp.errorToString(httpCode):"");cameraHttp.end();return false;}
  String contentType=cameraHttp.header("Content-Type");
  Serial.printf("[CAM] HTTP %d, content-type=%s\\n",httpCode,contentType.c_str());
