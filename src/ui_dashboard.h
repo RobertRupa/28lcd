@@ -307,7 +307,7 @@ static lv_obj_t *gateUiStatus=nullptr;
 static void gateUiAction(lv_event_t *e){
  uint8_t id=(uint8_t)(uintptr_t)lv_event_get_user_data(e);
  String result;bool ok=gateRequest(id,result);
- if(gateUiStatus)lv_label_set_text(gateUiStatus,(ok?"Wyslano: ":"Blad: ")+result);
+ if(gateUiStatus)lv_label_set_text(gateUiStatus,(String(ok?"Wyslano: ":"Blad: ")+result).c_str());
 }
 static void gateUiConfirm(lv_event_t *e){
  uint8_t id=(uint8_t)(uintptr_t)lv_event_get_user_data(e);
@@ -336,7 +336,7 @@ static void uiMakeGate(lv_obj_t *tab){
   lv_obj_t *b=button(tab,titles[i],gateUiConfirm);
   lv_obj_set_height(b,51);
   lv_obj_set_style_bg_color(b,lv_color_hex(i==2?0x245D56:0x23517D),0);
-  // button() attaches an earlier callback without user data; install the correct gated callback below.
+  // button() attaches an earlier callback without user data; replace it.
   lv_obj_remove_event_cb(b,gateUiConfirm);
   lv_obj_add_event_cb(b,gateUiConfirm,LV_EVENT_CLICKED,(void*)(uintptr_t)i);
  }
