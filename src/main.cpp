@@ -161,7 +161,7 @@ static void onTone(lv_event_t*){
  if(i2s_set_pin(I2S_NUM_1,&pins)==ESP_OK){
   int16_t samples[512];float phase=0;const float delta=2.0f*PI*440/44100;
   for(int k=0;k<110;k++){for(int i=0;i<256;i++){int16_t s=(int16_t)(sinf(phase)*7000);
-   samples[2*i]=samples[2*i+1]=s;phase+=delta;if(phase>2*PI)phase-=2*PI;}
+   samples[2*i]=samples[2*i+1]=(int16_t)(s*((float)masterVolume/100.0f));phase+=delta;if(phase>2*PI)phase-=2*PI;}
    size_t sent=0;i2s_write(I2S_NUM_1,samples,sizeof(samples),&sent,portMAX_DELAY);}
  }
  i2s_zero_dma_buffer(I2S_NUM_1);i2s_driver_uninstall(I2S_NUM_1);
@@ -192,7 +192,7 @@ static void bootMelody(){
    for(uint32_t i=0;i<count;i++){
     float envelope=(float)min(pos+i,150U)/150.0f;
     envelope*=min(1.0f,(float)(frames-pos-i)/200.0f);
-    int16_t sample=(int16_t)(sinf(phase)*2400.0f*envelope);
+    int16_t sample=(int16_t)(sinf(phase)*2400.0f*envelope*((float)masterVolume/100.0f));
     buf[2*i]=sample;buf[2*i+1]=sample;
     phase+=2.0f*PI*notes[n]/22050.0f;
     if(phase>2.0f*PI)phase-=2.0f*PI;
@@ -207,7 +207,29 @@ static void onI2c(lv_event_t*){
  Serial.println("[I2C] scanning bus");for(int i=1;i<127;i++)if(i2cPing(i))Serial.printf("[I2C] 0x%02X\n",i);
 }
 
+static void audioApplyMasterVolume();
 static Preferences thermostatPrefs;
+static Preferences audioPrefs;
+static uint8_t masterVolume=35; // 0..100%; conservative default
+static uint8_t masterVolumePending=35;
+static uint32_t masterVolumeChangedAt=0;
+static bool masterVolumeDirty=false;
+static lv_obj_t *masterVolumeLabel=nullptr;
+static void masterVolumeService(){
+ if(masterVolumeDirty && millis()-masterVolumeChangedAt>=900){
+  audioPrefs.putUChar("master",masterVolumePending);
+  masterVolumeDirty=false;
+ }
+}
+static void masterVolumeChanged(lv_event_t *e){
+ masterVolume=(uint8_t)constrain((int)lv_slider_get_value(lv_event_get_target_obj(e)),0,100);
+ masterVolumePending=masterVolume;
+ audioApplyMasterVolume();
+ masterVolumeDirty=true;
+ masterVolumeChangedAt=millis();
+ if(masterVolumeLabel){char buf[28];snprintf(buf,sizeof(buf),"Glosnosc: %u%%",masterVolume);lv_label_set_text(masterVolumeLabel,buf);}
+}
+
 static float setPoint=21.0f;
 // An internal die temperature is NOT ambient room temperature.
 static float roomTemp=NAN;
@@ -336,6 +358,12 @@ static void makeThermostat(lv_obj_t *tab){
 static void makeAdmin(lv_obj_t *tab){
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(tab,8,0);
  label(tab,"Panel administratora");
+ masterVolumeLabel=label(tab,"Glosnosc: 35%");
+ {char b[28];snprintf(b,sizeof(b),"Glosnosc: %u%%",masterVolume);lv_label_set_text(masterVolumeLabel,b);}
+ lv_obj_t *vol=lv_slider_create(tab);lv_obj_set_width(vol,195);lv_obj_set_height(vol,12);
+ lv_slider_set_range(vol,0,100);lv_slider_set_value(vol,masterVolume,LV_ANIM_OFF);
+ lv_obj_add_event_cb(vol,masterVolumeChanged,LV_EVENT_VALUE_CHANGED,nullptr);
+ label(tab,"Master volume: melodie, test tonu i WAV/MP3. Zapis automatyczny.");
  label(tab,"Termostat aktywny:");
  heatSwitch=lv_switch_create(tab);
  if(heatingEnabled)lv_obj_add_state(heatSwitch,LV_STATE_CHECKED);
@@ -368,6 +396,9 @@ static void setupUI(){uiSetupDashboard();}
 void setup(){
  Serial.begin(115200);delay(500);
  thermostatPrefs.begin("thermostat",false);
+ audioPrefs.begin("sound",false);
+ masterVolume=(uint8_t)constrain((int)audioPrefs.getUChar("master",35),0,100);
+ masterVolumePending=masterVolume;
  wifiPrefs.begin("wifi",false);
  setPoint=constrain(thermostatPrefs.getFloat("target",21.0f),15.0f,30.0f);
  hysteresis=constrain(thermostatPrefs.getFloat("hyst",0.5f),0.2f,2.0f);
@@ -418,7 +449,7 @@ void setup(){
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
 void loop(){
- audioService();coproService();cameraService();
+ audioService();coproService();cameraService();masterVolumeService();
 #if DHT_GPIO >= 0
  if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);temperatureValid=dhtOk;if(dhtOk)roomTemp=t;else heatingDemand=false;thermostatRefresh();}
 #else
