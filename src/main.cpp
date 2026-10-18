@@ -23,6 +23,13 @@ static uint32_t lastUpdate=0;
 static uint8_t ledColor=0;
 static lv_obj_t *statusLabel=nullptr,*sdLabel=nullptr,*wifiLabel=nullptr,*bleLabel=nullptr,*batteryLabel=nullptr;
 static bool sdBusy=false;
+static Preferences audioPrefs;
+static uint8_t masterVolume=35; // 0..100%; conservative default
+static uint8_t masterVolumePending=35;
+static uint32_t masterVolumeChangedAt=0;
+static bool masterVolumeDirty=false;
+static lv_obj_t *masterVolumeLabel=nullptr;
+
 static void bladeNavigate(int8_t direction);
 static int16_t swipeStartY=0,swipeStartX=0;
 static uint32_t swipeStartMs=0;
@@ -209,12 +216,6 @@ static void onI2c(lv_event_t*){
 
 static void audioApplyMasterVolume();
 static Preferences thermostatPrefs;
-static Preferences audioPrefs;
-static uint8_t masterVolume=35; // 0..100%; conservative default
-static uint8_t masterVolumePending=35;
-static uint32_t masterVolumeChangedAt=0;
-static bool masterVolumeDirty=false;
-static lv_obj_t *masterVolumeLabel=nullptr;
 static void masterVolumeService(){
  if(masterVolumeDirty && millis()-masterVolumeChangedAt>=900){
   audioPrefs.putUChar("master",masterVolumePending);
