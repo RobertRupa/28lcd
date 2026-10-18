@@ -499,11 +499,18 @@ void setup(){
    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
 #endif
  lv_init();
- // Two 32-line internal DMA buffers. RGB565, partial redraw only.
+ // Matter needs internal RAM for BLE/controller; use a single, smaller DMA draw buffer.
+#if defined(ENABLE_28LCD_MATTER) && ENABLE_28LCD_MATTER
+ constexpr uint32_t bufferBytes=LCD_W*24*2;
+ drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+ drawmemB=nullptr;
+ if(!drawmemA){Serial.println("[fatal] No DMA draw buffer");while(true)delay(1000);}
+#else
  constexpr uint32_t bufferBytes=LCD_W*32*2;
  drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
  drawmemB=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
  if(!drawmemA||!drawmemB){Serial.println("[fatal] No DMA draw buffers");while(true)delay(1000);}
+#endif
  Serial.printf("[INIT] LVGL free heap=%u, psram=%u\\n",(unsigned)ESP.getFreeHeap(),(unsigned)ESP.getFreePsram());
  lvDisplay=lv_display_create(LCD_W,LCD_H);
  if(!lvDisplay){Serial.println("[FATAL] lv_display_create returned null");while(true)delay(1000);}
