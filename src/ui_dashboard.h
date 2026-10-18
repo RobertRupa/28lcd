@@ -120,7 +120,7 @@ static void uiMakeWifi(lv_obj_t *tab){
  button(tab,"Skan Bluetooth LE",onBle);bleLabel=label(tab,"");
  label(tab,"ESP32-S3: Wi-Fi 2.4 GHz i BLE. Thread/Zigbee wymagaja zewnetrznego ESP32-C5/C6/H2 (RCP).");
  label(tab,"RCP: UART GPIO43 RX / GPIO44 TX wymaga przeniesienia logow UART0 na USB CDC i osobnego firmware.");
- wifiKeyboard=lv_keyboard_create(lv_scr_act());
+ wifiKeyboard=lv_keyboard_create(lv_screen_active());
  lv_obj_set_size(wifiKeyboard,LCD_W,150);lv_obj_align(wifiKeyboard,LV_ALIGN_BOTTOM_MID,0,0);
  lv_obj_add_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
  lv_obj_add_event_cb(wifiKeyboard,uiOnKeyboardDone,LV_EVENT_ALL,nullptr);
@@ -153,7 +153,7 @@ static void uiMakeCamera(lv_obj_t *tab){
  button(tab,"Start stream",uiCameraStart);
  button(tab,"Stop stream",uiCameraStop);
  cameraStatusObject=label(tab,"Only plain HTTP; JPEG <=240x180");
- cameraImageObject=lv_img_create(tab);
+ cameraImageObject=lv_image_create(tab);
 }
 static void uiMakeDisplay(lv_obj_t *tab){
  uiTab(tab);uiTitle(tab,"DISPLAY","Ekran i dotyk");
@@ -162,7 +162,7 @@ static void uiMakeDisplay(lv_obj_t *tab){
  lv_slider_set_range(s,15,255);lv_slider_set_value(s,160,LV_ANIM_OFF);
  lv_obj_add_event_cb(s,onBrightness,LV_EVENT_VALUE_CHANGED,nullptr);
  touchInfoLabel=label(tab,"Dotknij pola ponizej");
- lv_obj_t *pad=lv_btn_create(tab);lv_obj_set_size(pad,200,115);
+ lv_obj_t *pad=lv_button_create(tab);lv_obj_set_size(pad,200,115);
  lv_obj_set_style_bg_color(pad,lv_color_hex(0x1D4ED8),0);
  lv_obj_add_event_cb(pad,uiTouchEvent,LV_EVENT_PRESSED,nullptr);
  lv_obj_add_event_cb(pad,uiTouchEvent,LV_EVENT_PRESSING,nullptr);
@@ -184,10 +184,15 @@ static void uiMakeRgb(lv_obj_t *tab){
  label(tab,"Wbudowany WS2812 na GPIO42.");
 }
 static void uiSetupDashboard(){
- lv_obj_t *root=lv_scr_act();
+ lv_obj_t *root=lv_screen_active();
  lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1220),0);
- lv_obj_t *tabs=lv_tabview_create(root,LV_DIR_TOP,40);
- lv_obj_set_style_bg_color(lv_tabview_get_tab_btns(tabs),lv_color_hex(0x111827),0);
+ lv_obj_t *tabs=lv_tabview_create(root);
+ lv_obj_set_size(tabs,LCD_W,LCD_H);
+ lv_tabview_set_tab_bar_position(tabs,LV_DIR_BOTTOM);
+ lv_tabview_set_tab_bar_size(tabs,42);
+ lv_obj_set_style_bg_color(lv_tabview_get_tab_bar(tabs),lv_color_hex(0x101A2A),0);
+ lv_obj_set_style_border_width(lv_tabview_get_tab_bar(tabs),0,0);
+ lv_obj_set_style_text_color(lv_tabview_get_tab_bar(tabs),lv_color_hex(0xCBD5E1),0);
  lv_obj_t *thermo=lv_tabview_add_tab(tabs,"DOM");
  lv_obj_t *radio=lv_tabview_add_tab(tabs,"RADIO");
  lv_obj_t *audio=lv_tabview_add_tab(tabs,"AUDIO");
