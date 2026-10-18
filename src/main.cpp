@@ -237,32 +237,13 @@ static void makeAdmin(lv_obj_t *tab){
  thermostatRefresh();
 }
 
-static void setupUI(){
- lv_obj_t *tabs=lv_tabview_create(lv_scr_act(),LV_DIR_TOP,34);
- lv_obj_t *room=lv_tabview_add_tab(tabs,"POKOJ");
- lv_obj_t *admin=lv_tabview_add_tab(tabs,"ADMIN");
- lv_obj_t *hardware=lv_tabview_add_tab(tabs,"TESTY");
- lv_obj_t *storage=lv_tabview_add_tab(tabs,"SD/WIFI");
- makeThermostat(room);
- makeAdmin(admin);
- lv_obj_set_flex_flow(hardware,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(hardware,8,0);
- lv_obj_set_flex_flow(storage,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(storage,8,0);
- button(hardware,"RGB: zmien kolor",onLed);
- label(hardware,"Podswietlenie LCD:");
- lv_obj_t *slider=lv_slider_create(hardware);lv_obj_set_width(slider,195);
- lv_slider_set_range(slider,15,255);lv_slider_set_value(slider,160,LV_ANIM_OFF);
- lv_obj_add_event_cb(slider,onBrightness,LV_EVENT_VALUE_CHANGED,nullptr);
- button(hardware,"Test glosnika 440 Hz",onTone);
- button(hardware,"Skanuj I2C -> USB",onI2c);
- label(hardware,"BOOT: odczyt w ADMIN.");
- button(storage,"Pokaz pliki microSD",onSd);sdLabel=label(storage,"Wloz karte i nacisnij przycisk.");
- button(storage,"Skanuj sieci Wi-Fi",onWifi);wifiLabel=label(storage,"Wi-Fi bez zapisanego hasla.");
- button(storage,"Skanuj Bluetooth LE",onBle);bleLabel=label(storage,"BLE nieaktywne do czasu testu.");
- statusUpdate();
-}
+#include "ui_dashboard.h"
+static void setupUI(){uiSetupDashboard();}
+
 void setup(){
  Serial.begin(115200);delay(500);
  thermostatPrefs.begin("thermostat",false);
+ wifiPrefs.begin("wifi",false);
  setPoint=constrain(thermostatPrefs.getFloat("target",21.0f),15.0f,30.0f);
  hysteresis=constrain(thermostatPrefs.getFloat("hyst",0.5f),0.2f,2.0f);
  heatingEnabled=thermostatPrefs.getBool("enabled",true);
@@ -291,7 +272,7 @@ void setup(){
  setupUI();
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
-void loop(){lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();
+void loop(){lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
  char b[96];snprintf(b,sizeof(b),"BAT ADC: %d (szac. %.2f V*)",raw,voltage);
  if(batteryLabel)lv_label_set_text(batteryLabel,b);
