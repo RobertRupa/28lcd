@@ -16,8 +16,8 @@
 
 static LGFX lcd;
 static Adafruit_NeoPixel pixel(1, RGB_GPIO, NEO_GRB + NEO_KHZ800);
-static lv_disp_draw_buf_t drawbuf;
-static lv_color_t *drawmem=nullptr;
+static uint8_t *drawmemA=nullptr,*drawmemB=nullptr;
+static lv_display_t *lvDisplay=nullptr;
 static bool touchOk=false,codecOk=false,sdOk=false;
 static uint32_t lastUpdate=0;
 static uint8_t ledColor=0;
@@ -53,12 +53,12 @@ static bool touchRead(int32_t &x,int32_t &y){
  y=constrain((int32_t)(LCD_H-1-ry),0,LCD_H-1);
  return true;
 }
-static void flushCb(lv_disp_drv_t *d,const lv_area_t *a,lv_color_t *px){
+static void flushCb(lv_display_t *d,const lv_area_t *a,uint8_t *px){
  uint32_t w=a->x2-a->x1+1,h=a->y2-a->y1+1;
  lcd.startWrite();lcd.setAddrWindow(a->x1,a->y1,w,h);
- lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_disp_flush_ready(d);
+ lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_display_flush_ready(d);
 }
-static void inputCb(lv_indev_drv_t*,lv_indev_data_t *d){
+static void inputCb(lv_indev_t*,lv_indev_data_t *d){
  int32_t x=0,y=0;if(touchRead(x,y)){d->state=LV_INDEV_STATE_PRESSED;d->point.x=x;d->point.y=y;}
  else d->state=LV_INDEV_STATE_RELEASED;
 }
@@ -67,7 +67,7 @@ static lv_obj_t *label(lv_obj_t *parent,const char *text){
  lv_obj_t *o=lv_label_create(parent);lv_label_set_text(o,text);lv_label_set_long_mode(o,LV_LABEL_LONG_WRAP);lv_obj_set_width(o,205);return o;
 }
 static lv_obj_t *button(lv_obj_t *parent,const char *txt,lv_event_cb_t callback){
- lv_obj_t *b=lv_btn_create(parent);lv_obj_set_width(b,200);lv_obj_set_height(b,36);
+ lv_obj_t *b=lv_button_create(parent);lv_obj_set_width(b,200);lv_obj_set_height(b,36);
  lv_obj_add_event_cb(b,callback,LV_EVENT_CLICKED,nullptr);
  lv_obj_t *t=lv_label_create(b);lv_label_set_text(t,txt);lv_obj_center(t);return b;
 }
@@ -207,28 +207,53 @@ static lv_obj_t* makeHeading(lv_obj_t *parent,const char *str,uint8_t fontSize=0
  return o;
 }
 static void makeThermostat(lv_obj_t *tab){
- lv_obj_set_style_bg_color(tab,lv_color_hex(0x111827),0);
+ lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B101B),0);
  lv_obj_set_style_pad_all(tab,8,0);
+ lv_obj_set_style_pad_row(tab,8,0);
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);
  lv_obj_set_flex_align(tab,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
- makeHeading(tab,"TERMOSTAT POKOJOWY");
- makeHeading(tab,"TEMP. W POMIESZCZENIU");
- roomLabel=makeHeading(tab,"20.0°C");
+ lv_obj_t *head=lv_label_create(tab);
+ lv_label_set_text(head,"KLIMAT  /  SALON");
+ lv_obj_set_style_text_color(head,lv_color_hex(0x94A3B8),0);
+ lv_obj_set_style_text_font(head,&lv_font_montserrat_14,0);
+ lv_obj_t *card=lv_obj_create(tab);
+ lv_obj_set_width(card,LV_PCT(100));
+ lv_obj_set_height(card,170);
+ lv_obj_set_style_radius(card,18,0);
+ lv_obj_set_style_border_width(card,1,0);
+ lv_obj_set_style_border_color(card,lv_color_hex(0x26344A),0);
+ lv_obj_set_style_bg_color(card,lv_color_hex(0x172234),0);
+ lv_obj_set_style_pad_all(card,13,0);
+ lv_obj_clear_flag(card,LV_OBJ_FLAG_SCROLLABLE);
+ lv_obj_set_flex_flow(card,LV_FLEX_FLOW_COLUMN);
+ lv_obj_set_style_pad_row(card,8,0);
+ lv_obj_t *subtitle=lv_label_create(card);
+ lv_label_set_text(subtitle,"TEMPERATURA");
+ lv_obj_set_style_text_color(subtitle,lv_color_hex(0x9AACBE),0);
+ roomLabel=lv_label_create(card);lv_label_set_text(roomLabel,"20.0°C");
  lv_obj_set_style_text_font(roomLabel,&lv_font_montserrat_28,0);
- targetLabel=makeHeading(tab,"Cel: 21.0°C");
- targetSlider=lv_slider_create(tab);lv_obj_set_width(targetSlider,195);
+ lv_obj_set_style_text_color(roomLabel,lv_color_hex(0xF8FAFC),0);
+ heatLabel=lv_label_create(card);lv_label_set_text(heatLabel,"GRZANIE: OFF");
+ lv_obj_set_style_text_color(heatLabel,lv_color_hex(0x6EE7B7),0);
+ lv_obj_t *set=lv_obj_create(tab);
+ lv_obj_set_width(set,LV_PCT(100));lv_obj_set_height(set,94);
+ lv_obj_set_style_radius(set,16,0);
+ lv_obj_set_style_bg_color(set,lv_color_hex(0x172234),0);
+ lv_obj_set_style_border_width(set,0,0);
+ lv_obj_set_style_pad_all(set,10,0);
+ targetLabel=lv_label_create(set);lv_label_set_text(targetLabel,"Cel: 21.0°C");
+ lv_obj_set_style_text_color(targetLabel,lv_color_hex(0xE2E8F0),0);
+ targetSlider=lv_slider_create(set);
+ lv_obj_set_width(targetSlider,LV_PCT(100));
+ lv_obj_set_height(targetSlider,11);
+ lv_obj_align(targetSlider,LV_ALIGN_BOTTOM_MID,0,-7);
  lv_slider_set_range(targetSlider,150,300);
  lv_slider_set_value(targetSlider,(int)(setPoint*10),LV_ANIM_OFF);
+ lv_obj_set_style_bg_color(targetSlider,lv_color_hex(0x37465F),LV_PART_MAIN);
+ lv_obj_set_style_bg_color(targetSlider,lv_color_hex(0x38BDF8),LV_PART_INDICATOR);
+ lv_obj_set_style_bg_color(targetSlider,lv_color_hex(0xF8FAFC),LV_PART_KNOB);
  lv_obj_add_event_cb(targetSlider,onTarget,LV_EVENT_VALUE_CHANGED,nullptr);
- heatLabel=makeHeading(tab,"GRZANIE: OFF");
- thermoNote=makeHeading(tab,
-#if DHT_GPIO >= 0
- "Czujnik DHT GPIO2 (odczyt co 2.5s)"
-#else
- "DEMO - temperatura symulowana"
-#endif
- );
- lv_obj_set_style_text_color(thermoNote,lv_color_hex(0xFBBF24),0);
+ thermoNote=nullptr; // No demo overlay on the home screen.
  thermostatRefresh();
 }
 static void makeAdmin(lv_obj_t *tab){
@@ -287,11 +312,19 @@ void setup(){
  sdOk=SD_MMC.begin("/sdcard",false,false,20000,5);
  WiFi.mode(WIFI_OFF);
  lv_init();
- drawmem=(lv_color_t*)heap_caps_malloc(LCD_W*24*sizeof(lv_color_t),MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
- if(!drawmem){Serial.println("[fatal] No DMA draw buffer");while(true)delay(1000);}
- lv_disp_draw_buf_init(&drawbuf,drawmem,nullptr,LCD_W*24);
- static lv_disp_drv_t dd;lv_disp_drv_init(&dd);dd.hor_res=LCD_W;dd.ver_res=LCD_H;dd.flush_cb=flushCb;dd.draw_buf=&drawbuf;lv_disp_drv_register(&dd);
- static lv_indev_drv_t id;lv_indev_drv_init(&id);id.type=LV_INDEV_TYPE_POINTER;id.read_cb=inputCb;lv_indev_drv_register(&id);
+ // Two 32-line internal DMA buffers. RGB565, partial redraw only.
+ constexpr uint32_t bufferBytes=LCD_W*32*2;
+ drawmemA=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+ drawmemB=(uint8_t*)heap_caps_malloc(bufferBytes,MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+ if(!drawmemA||!drawmemB){Serial.println("[fatal] No DMA draw buffers");while(true)delay(1000);}
+ lvDisplay=lv_display_create(LCD_W,LCD_H);
+ lv_display_set_color_format(lvDisplay,LV_COLOR_FORMAT_RGB565);
+ lv_display_set_flush_cb(lvDisplay,flushCb);
+ lv_display_set_buffers(lvDisplay,drawmemA,drawmemB,bufferBytes,LV_DISPLAY_RENDER_MODE_PARTIAL);
+ lv_indev_t *touch=lv_indev_create();
+ lv_indev_set_type(touch,LV_INDEV_TYPE_POINTER);
+ lv_indev_set_read_cb(touch,inputCb);
+ lv_indev_set_display(touch,lvDisplay);
  const esp_timer_create_args_t args={.callback=&tick,.arg=nullptr,.dispatch_method=ESP_TIMER_TASK,.name="lv_tick",.skip_unhandled_events=true};
  esp_timer_handle_t th;esp_timer_create(&args,&th);esp_timer_start_periodic(th,1000);
  setupUI();
