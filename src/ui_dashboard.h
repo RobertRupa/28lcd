@@ -7,18 +7,20 @@ static Preferences wifiPrefs;
 
 static void uiTitle(lv_obj_t *parent,const char *heading,const char *sub){
  lv_obj_t *h=lv_label_create(parent);lv_label_set_text(h,heading);
- lv_obj_set_width(h,210);lv_obj_set_style_text_font(h,&lv_font_montserrat_28,0);
+ lv_obj_set_width(h,210);lv_obj_set_style_text_font(h,&lv_font_montserrat_14,0);
  lv_obj_set_style_text_color(h,lv_color_hex(0xF8FAFC),0);
  lv_obj_t *s=lv_label_create(parent);lv_label_set_text(s,sub);
  lv_obj_set_width(s,210);lv_label_set_long_mode(s,LV_LABEL_LONG_WRAP);
- lv_obj_set_style_text_color(s,lv_color_hex(0x94A3B8),0);
+ lv_obj_set_style_text_color(s,lv_color_hex(0xC7D2E1),0);
 }
 static void uiTab(lv_obj_t *tab){
- lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B1220),0);
+ lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B1018),0);
  lv_obj_set_style_pad_all(tab,10,0);
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);
  lv_obj_set_flex_align(tab,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
- lv_obj_set_style_pad_row(tab,11,0);
+ lv_obj_set_style_pad_row(tab,9,0);
+ lv_obj_set_style_text_font(tab,&lv_font_montserrat_14,0);
+ lv_obj_set_style_text_color(tab,lv_color_hex(0xF1F5F9),0);
 }
 static void uiOnKeyboard(lv_event_t *e){
  lv_obj_t *target=lv_event_get_target_obj(e);
@@ -183,27 +185,87 @@ static void uiMakeRgb(lv_obj_t *tab){
  label(tab,"Sekwencja: off / czerwony / zielony / niebieski / bialy.");
  label(tab,"Wbudowany WS2812 na GPIO42.");
 }
+// Blade-style navigation: four readable actions rather than eight squeezed tabs.
+static lv_obj_t *bladePages[9]={};
+static lv_obj_t *bladeNavButtons[4]={};
+static uint8_t bladePage=0;
+static void bladeShow(uint8_t page){
+ if(page>=9)return;
+ bladePage=page;
+ for(uint8_t i=0;i<9;i++){
+  if(bladePages[i]){
+   if(i==page)lv_obj_remove_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
+   else lv_obj_add_flag(bladePages[i],LV_OBJ_FLAG_HIDDEN);
+  }
+ }
+ for(uint8_t i=0;i<4;i++){
+  if(!bladeNavButtons[i])continue;
+  bool active=(i==0&&page==0)||(i==1&&page==1)||(i==2&&page==2)||(i==3&&page>=3);
+  lv_obj_set_style_bg_color(bladeNavButtons[i],lv_color_hex(active?0x2F475F:0x141E2B),0);
+  lv_obj_set_style_text_color(bladeNavButtons[i],lv_color_hex(active?0xFFFFFF:0xD4DCE7),0);
+ }
+}
+static void bladeNavEvent(lv_event_t *e){bladeShow((uint8_t)(uintptr_t)lv_event_get_user_data(e));}
+static lv_obj_t *bladeButton(lv_obj_t *parent,const char *txt,uint8_t page){
+ lv_obj_t *b=lv_button_create(parent);
+ lv_obj_set_style_radius(b,10,0);
+ lv_obj_set_style_border_width(b,0,0);
+ lv_obj_set_style_shadow_width(b,0,0);
+ lv_obj_add_event_cb(b,bladeNavEvent,LV_EVENT_CLICKED,(void*)(uintptr_t)page);
+ lv_obj_t *t=lv_label_create(b);lv_label_set_text(t,txt);
+ lv_obj_set_style_text_font(t,&lv_font_montserrat_14,0);
+ lv_obj_center(t);
+ return b;
+}
+static lv_obj_t *bladePageCreate(lv_obj_t *root){
+ lv_obj_t *p=lv_obj_create(root);
+ lv_obj_set_pos(p,0,0);lv_obj_set_size(p,LCD_W,LCD_H-49);
+ lv_obj_set_style_bg_color(p,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_border_width(p,0,0);
+ lv_obj_set_style_radius(p,0,0);
+ lv_obj_set_style_pad_all(p,0,0);
+ lv_obj_set_scroll_dir(p,LV_DIR_VER);
+ return p;
+}
+static void bladeSection(lv_obj_t *page){
+ lv_obj_t *back=bladeButton(page,"<  MENU",3);
+ lv_obj_set_size(back,185,39);
+ lv_obj_set_style_bg_color(back,lv_color_hex(0x263B50),0);
+}
 static void uiSetupDashboard(){
  lv_obj_t *root=lv_screen_active();
- lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1220),0);
- lv_obj_t *tabs=lv_tabview_create(root);
- lv_obj_set_size(tabs,LCD_W,LCD_H);
- lv_tabview_set_tab_bar_position(tabs,LV_DIR_BOTTOM);
- lv_tabview_set_tab_bar_size(tabs,42);
- lv_obj_set_style_bg_color(lv_tabview_get_tab_bar(tabs),lv_color_hex(0x101A2A),0);
- lv_obj_set_style_border_width(lv_tabview_get_tab_bar(tabs),0,0);
- lv_obj_set_style_text_color(lv_tabview_get_tab_bar(tabs),lv_color_hex(0xCBD5E1),0);
- lv_obj_t *thermo=lv_tabview_add_tab(tabs,"DOM");
- lv_obj_t *radio=lv_tabview_add_tab(tabs,"RADIO");
- lv_obj_t *audio=lv_tabview_add_tab(tabs,"AUDIO");
- lv_obj_t *screen=lv_tabview_add_tab(tabs,"LCD");
- lv_obj_t *power=lv_tabview_add_tab(tabs,"BAT");
- lv_obj_t *rgb=lv_tabview_add_tab(tabs,"RGB");
- lv_obj_t *admin=lv_tabview_add_tab(tabs,"ADMIN");
- lv_obj_t *camera=lv_tabview_add_tab(tabs,"CCTV");
- uiTab(thermo);makeThermostat(thermo);
- uiMakeWifi(radio);uiMakeAudio(audio);uiMakeDisplay(screen);uiMakePower(power);uiMakeRgb(rgb);
- uiTab(admin);makeAdmin(admin);uiMakeCamera(camera);
+ lv_obj_set_style_bg_color(root,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_border_width(root,0,0);
+ lv_obj_set_style_pad_all(root,0,0);
+ for(uint8_t i=0;i<9;i++)bladePages[i]=bladePageCreate(root);
+ uiTab(bladePages[0]);makeThermostat(bladePages[0]);
+ uiMakeWifi(bladePages[1]);uiMakeAudio(bladePages[2]);
+ uiTab(bladePages[3]);uiTitle(bladePages[3],"MENU","Ustawienia i narzedzia");
+ static const char *names[]={"EKRAN I DOTYK","BATERIA","RGB","ADMIN","KAMERA"};
+ for(uint8_t i=0;i<5;i++){
+  lv_obj_t *b=bladeButton(bladePages[3],names[i],(uint8_t)(i+4));
+  lv_obj_set_size(b,205,40);
+  lv_obj_set_style_bg_color(b,lv_color_hex(0x1E3347),0);
+ }
+ bladeSection(bladePages[4]);uiMakeDisplay(bladePages[4]);
+ bladeSection(bladePages[5]);uiMakePower(bladePages[5]);
+ bladeSection(bladePages[6]);uiMakeRgb(bladePages[6]);
+ bladeSection(bladePages[7]);uiTab(bladePages[7]);makeAdmin(bladePages[7]);
+ bladeSection(bladePages[8]);uiMakeCamera(bladePages[8]);
+ lv_obj_t *bar=lv_obj_create(root);
+ lv_obj_set_pos(bar,0,LCD_H-49);lv_obj_set_size(bar,LCD_W,49);
+ lv_obj_set_style_bg_color(bar,lv_color_hex(0x101B2A),0);
+ lv_obj_set_style_border_width(bar,0,0);
+ lv_obj_set_style_radius(bar,0,0);
+ lv_obj_set_style_pad_all(bar,4,0);
+ lv_obj_set_style_pad_column(bar,4,0);
+ lv_obj_set_flex_flow(bar,LV_FLEX_FLOW_ROW);
+ const char *items[]={"DOM","RADIO","AUDIO","MENU"};
+ for(uint8_t i=0;i<4;i++){
+  bladeNavButtons[i]=bladeButton(bar,items[i],i);
+  lv_obj_set_size(bladeNavButtons[i],55,40);
+ }
+ bladeShow(0);
  statusUpdate();
 }
 static void uiPowerRefresh(){
