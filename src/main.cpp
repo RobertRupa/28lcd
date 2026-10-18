@@ -24,6 +24,7 @@ static uint8_t ledColor=0;
 static lv_obj_t *statusLabel=nullptr,*sdLabel=nullptr,*wifiLabel=nullptr,*bleLabel=nullptr,*batteryLabel=nullptr;
 static bool sdBusy=false;
 static Preferences audioPrefs;
+static Preferences wifiPrefs;
 static uint8_t masterVolume=35; // 0..100%; conservative default
 static uint8_t masterVolumePending=35;
 static uint32_t masterVolumeChangedAt=0;
@@ -393,6 +394,7 @@ static void makeAdmin(lv_obj_t *tab){
 #include "audio_engine.h"
 #include "camera_engine.h"
 #include "coprocessor.h"
+#include "gate_web.h"
 #include "ui_dashboard.h"
 static void setupUI(){uiSetupDashboard();}
 
@@ -426,7 +428,8 @@ void setup(){
  // Shared with SDIO pins only, never configure them as GPIO elsewhere.
  SD_MMC.setPins(SD_CLK,SD_CMD,SD_D0,SD_D1,SD_D2,SD_D3);
  sdOk=SD_MMC.begin("/sdcard",false,false,20000,5);
- WiFi.mode(WIFI_OFF);
+ WiFi.mode(WIFI_STA);
+ {String ssid=wifiPrefs.getString("ssid","");if(ssid.length())WiFi.begin(ssid.c_str(),wifiPrefs.getString("password","").c_str());}
  lv_init();
  // Two 32-line internal DMA buffers. RGB565, partial redraw only.
  constexpr uint32_t bufferBytes=LCD_W*32*2;
@@ -445,6 +448,7 @@ void setup(){
  lv_indev_set_display(touch,lvDisplay);
  const esp_timer_create_args_t args={.callback=&tick,.arg=nullptr,.dispatch_method=ESP_TIMER_TASK,.name="lv_tick",.skip_unhandled_events=true};
  esp_timer_handle_t th;esp_timer_create(&args,&th);esp_timer_start_periodic(th,1000);
+ gateWebBegin();
  setupUI();
 #ifdef ENABLE_COPROCESSOR_UART
  coproBegin();
@@ -452,7 +456,7 @@ void setup(){
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
 void loop(){
- audioService();coproService();cameraService();masterVolumeService();
+ audioService();coproService();cameraService();masterVolumeService();gateWebService();
 #if DHT_GPIO >= 0
  if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);temperatureValid=dhtOk;if(dhtOk)roomTemp=t;else heatingDemand=false;thermostatRefresh();}
 #else
