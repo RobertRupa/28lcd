@@ -23,6 +23,12 @@ static uint32_t lastUpdate=0;
 static uint8_t ledColor=0;
 static lv_obj_t *statusLabel=nullptr,*sdLabel=nullptr,*wifiLabel=nullptr,*bleLabel=nullptr,*batteryLabel=nullptr;
 static bool sdBusy=false;
+static void bladeNavigate(int8_t direction);
+static int16_t swipeStartY=0,swipeStartX=0;
+static uint32_t swipeStartMs=0;
+static bool swipeTracking=false;
+static int16_t swipeLastY=0,swipeLastX=0;
+static int8_t swipePending=0;
 
 static bool i2cPing(uint8_t addr){Wire.beginTransmission(addr);return Wire.endTransmission()==0;}
 static bool codecReg(uint8_t r,uint8_t v){Wire.beginTransmission(CODEC_ADDR);Wire.write(r);Wire.write(v);return Wire.endTransmission()==0;}
@@ -42,10 +48,10 @@ static void codecBegin(){
 static bool touchRead(int32_t &x,int32_t &y){
  if(!touchOk)return false;
  Wire.beginTransmission(TOUCH_ADDR);Wire.write(0x02);
- if(Wire.endTransmission(false)!=0||Wire.requestFrom(TOUCH_ADDR, (uint8_t)1)!=(uint8_t)1)return false;
+ if(Wire.endTransmission(false)!=0||Wire.requestFrom((uint8_t)TOUCH_ADDR, (uint8_t)1)!=(uint8_t)1)return false;
  uint8_t n=Wire.read() & 0x0F;if(n==0||n>2)return false;
  Wire.beginTransmission(TOUCH_ADDR);Wire.write(0x03);
- if(Wire.endTransmission(false)!=0||Wire.requestFrom(TOUCH_ADDR,(uint8_t)4)!=(uint8_t)4)return false;
+ if(Wire.endTransmission(false)!=0||Wire.requestFrom((uint8_t)TOUCH_ADDR,(uint8_t)4)!=(uint8_t)4)return false;
  uint8_t xh=Wire.read(),xl=Wire.read(),yh=Wire.read(),yl=Wire.read();
  int32_t rx=((xh & 0x0F)<<8)|xl,ry=((yh & 0x0F)<<8)|yl;
  // Same mirrored transform as the reference project.
@@ -59,8 +65,22 @@ static void flushCb(lv_display_t *d,const lv_area_t *a,uint8_t *px){
  lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_display_flush_ready(d);
 }
 static void inputCb(lv_indev_t*,lv_indev_data_t *d){
- int32_t x=0,y=0;if(touchRead(x,y)){d->state=LV_INDEV_STATE_PRESSED;d->point.x=x;d->point.y=y;}
- else d->state=LV_INDEV_STATE_RELEASED;
+ int32_t x=0,y=0;
+ if(touchRead(x,y)){
+  d->state=LV_INDEV_STATE_PRESSED;d->point.x=x;d->point.y=y;
+  swipeLastX=x;swipeLastY=y;
+  if(!swipeTracking){swipeTracking=true;swipeStartX=x;swipeStartY=y;swipeStartMs=millis();}
+ }else{
+  d->state=LV_INDEV_STATE_RELEASED;
+  if(swipeTracking){
+   // A deliberate vertical gesture; horizontal sliders do not trigger navigation.
+   int32_t dx=swipeLastX-swipeStartX;
+   int32_t dy=swipeLastY-swipeStartY;
+   if(abs(dy)>75 && abs(dy)>abs(dx)*2 && millis()-swipeStartMs<1100)
+    swipePending=(dy<0)?1:-1;
+   swipeTracking=false;
+  }
+ }
 }
 static void tick(void*){lv_tick_inc(1);}
 static lv_obj_t *label(lv_obj_t *parent,const char *text){
@@ -146,6 +166,42 @@ static void onTone(lv_event_t*){
  }
  i2s_zero_dma_buffer(I2S_NUM_1);i2s_driver_uninstall(I2S_NUM_1);
  digitalWrite(AMP_EN,HIGH);Serial.println("[audio] tone complete");
+}
+// Subtle three-note boot chime through ES8311; I2S is released afterwards.
+static void bootMelody(){
+ if(!codecOk)return;
+ i2s_config_t cfg={};
+ cfg.mode=(i2s_mode_t)(I2S_MODE_MASTER|I2S_MODE_TX);
+ cfg.sample_rate=22050;cfg.bits_per_sample=I2S_BITS_PER_SAMPLE_16BIT;
+ cfg.channel_format=I2S_CHANNEL_FMT_RIGHT_LEFT;
+ cfg.communication_format=I2S_COMM_FORMAT_STAND_I2S;
+ cfg.intr_alloc_flags=ESP_INTR_FLAG_LEVEL1;cfg.dma_buf_count=4;cfg.dma_buf_len=128;
+ cfg.use_apll=false;cfg.tx_desc_auto_clear=true;cfg.mclk_multiple=I2S_MCLK_MULTIPLE_256;
+ if(i2s_driver_install(I2S_NUM_1,&cfg,0,nullptr)!=ESP_OK)return;
+ i2s_pin_config_t pins={};
+ pins.mck_io_num=I2S_MCLK;pins.bck_io_num=I2S_BCLK;
+ pins.ws_io_num=I2S_WS;pins.data_out_num=I2S_DOUT;pins.data_in_num=I2S_PIN_NO_CHANGE;
+ if(i2s_set_pin(I2S_NUM_1,&pins)!=ESP_OK){i2s_driver_uninstall(I2S_NUM_1);return;}
+ static const uint16_t notes[]={523,659,784};
+ int16_t buf[256];float phase=0.0f;
+ digitalWrite(AMP_EN,LOW);
+ for(uint8_t n=0;n<3;n++){
+  const uint32_t frames=2205; // 100 ms per note
+  for(uint32_t pos=0;pos<frames;pos+=128){
+   const uint32_t count=min((uint32_t)128,frames-pos);
+   for(uint32_t i=0;i<count;i++){
+    float envelope=(float)min(pos+i,150U)/150.0f;
+    envelope*=min(1.0f,(float)(frames-pos-i)/200.0f);
+    int16_t sample=(int16_t)(sinf(phase)*2400.0f*envelope);
+    buf[2*i]=sample;buf[2*i+1]=sample;
+    phase+=2.0f*PI*notes[n]/22050.0f;
+    if(phase>2.0f*PI)phase-=2.0f*PI;
+   }
+   size_t written=0;i2s_write(I2S_NUM_1,buf,count*4,&written,portMAX_DELAY);
+  }
+ }
+ i2s_zero_dma_buffer(I2S_NUM_1);i2s_driver_uninstall(I2S_NUM_1);
+ digitalWrite(AMP_EN,HIGH);
 }
 static void onI2c(lv_event_t*){
  Serial.println("[I2C] scanning bus");for(int i=1;i<127;i++)if(i2cPing(i))Serial.printf("[I2C] 0x%02X\n",i);
@@ -331,6 +387,7 @@ void setup(){
  touchOk=i2cPing(TOUCH_ADDR);
  if(touchOk){Wire.beginTransmission(TOUCH_ADDR);Wire.write(0xA4);Wire.write(0x00);Wire.endTransmission();}
  codecBegin();
+ bootMelody();
  lcd.init();lcd.setRotation(0);lcd.setBrightness(160);lcd.fillScreen(TFT_BLACK);
  // Shared with SDIO pins only, never configure them as GPIO elsewhere.
  SD_MMC.setPins(SD_CLK,SD_CMD,SD_D0,SD_D1,SD_D2,SD_D3);
@@ -372,7 +429,9 @@ void loop(){
   thermostatRefresh();
  }
 #endif
- lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
+ lv_timer_handler();
+ if(swipePending){int8_t direction=swipePending;swipePending=0;bladeNavigate(direction);}
+ if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
  char b[96];snprintf(b,sizeof(b),"BAT ADC: %d (szac. %.2f V*)",raw,voltage);
  if(batteryLabel)lv_label_set_text(batteryLabel,b);
