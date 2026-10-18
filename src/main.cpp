@@ -24,6 +24,19 @@ static uint32_t lastUpdate=0;
 static uint8_t ledColor=0;
 static lv_obj_t *statusLabel=nullptr,*sdLabel=nullptr,*wifiLabel=nullptr,*bleLabel=nullptr,*batteryLabel=nullptr;
 static bool sdBusy=false;
+static lv_obj_t *fpsOverlay=nullptr;
+static uint32_t fpsWindowAt=0;
+static uint16_t fpsFrameCount=0;
+static uint16_t fpsMeasured=0;
+static void fpsUpdate(){
+ uint32_t now=millis();
+ if(now-fpsWindowAt<1000)return;
+ uint32_t elapsed=now-fpsWindowAt;
+ fpsMeasured=(uint16_t)((1000UL*fpsFrameCount)/max((uint32_t)1,elapsed));
+ fpsFrameCount=0;fpsWindowAt=now;
+ if(fpsOverlay){char t[20];snprintf(t,sizeof(t),"%u FPS",fpsMeasured);lv_label_set_text(fpsOverlay,t);}
+}
+
 static Preferences wifiPrefs;
 static uint32_t wifiRetryAt=0;
 static bool ntpStarted=false;
@@ -85,7 +98,9 @@ static void flushCb(lv_display_t *d,const lv_area_t *a,uint8_t *px){
  uint32_t w=a->x2-a->x1+1,h=a->y2-a->y1+1;
  lcd.startWrite();lcd.setAddrWindow(a->x1,a->y1,w,h);
  // LovyanGFX handles RGB565 transfer ordering: do not byte-swap LVGL buffer.
- lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();lv_display_flush_ready(d);
+ lcd.writePixels((lgfx::rgb565_t*)px,w*h);lcd.endWrite();
+ if(lv_display_flush_is_last(d))fpsFrameCount++;
+ lv_display_flush_ready(d);
 }
 static void inputCb(lv_indev_t*,lv_indev_data_t *d){
  int32_t x=0,y=0;
@@ -484,7 +499,7 @@ void loop(){
   thermostatRefresh();
  }
 #endif
- lv_timer_handler();
+ lv_timer_handler();fpsUpdate();
  if(swipePending){int8_t direction=swipePending;swipePending=0;bladeNavigate(direction);}
  if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();clockRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
