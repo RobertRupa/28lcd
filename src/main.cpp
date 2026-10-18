@@ -431,7 +431,6 @@ static void makeAdmin(lv_obj_t *tab){
 #include "coprocessor.h"
 #include "gate_web.h"
 #include "ui_dashboard.h"
-#include "web_config.h"
 static void setupUI(){uiSetupDashboard();}
 
 void setup(){
