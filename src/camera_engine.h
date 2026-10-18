@@ -32,7 +32,7 @@ static void cameraStop(){
  cameraActive=false;cameraCapturing=false;cameraStream=nullptr;cameraHttp.end();
  if(cameraStatusObject)lv_label_set_text(cameraStatusObject,"Podglad zatrzymany");
 }
-static bool cameraStart(const char *url){
+static bool cameraStart(const char *url,const char *username=nullptr,const char *password=nullptr){
  cameraStop();
  if(WiFi.status()!=WL_CONNECTED||!url||strncmp(url,"http://",7)!=0)return false;
  if(!cameraFrame)cameraFrame=(uint8_t*)heap_caps_malloc(cameraMaxFrame,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
@@ -46,6 +46,7 @@ static bool cameraStart(const char *url){
  cameraImageDescriptor.data=(const uint8_t*)cameraPixels;
  cameraHttp.setTimeout(1000);
  if(!cameraHttp.begin(url))return false;
+ if(username&&username[0])cameraHttp.setAuthorization(username,password?password:"");
  if(cameraHttp.GET()!=HTTP_CODE_OK){cameraHttp.end();return false;}
  cameraStream=cameraHttp.getStreamPtr();
  cameraFrameSize=0;cameraCapturing=false;cameraActive=true;
