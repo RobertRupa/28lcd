@@ -286,7 +286,19 @@ static bool heatingDemand=false; // Logic only; no relay GPIO is driven
 static lv_obj_t *roomLabel=nullptr,*targetLabel=nullptr,*heatLabel=nullptr,*thermoNote=nullptr,*adminLabel=nullptr;
 static lv_obj_t *targetSlider=nullptr,*simulationSlider=nullptr,*heatSwitch=nullptr,*hysteresisSlider=nullptr;
 
+// RGB WS2812 maps configured temperature setpoint: blue -> red.
+static float ledTempMin=14.0f,ledTempMax=28.0f;
+static uint8_t ledBrightness=48;
+static void thermostatLedUpdate(){
+ float range=max(0.5f,ledTempMax-ledTempMin);
+ float ratio=constrain((setPoint-ledTempMin)/range,0.0f,1.0f);
+ uint8_t r=(uint8_t)roundf(ledBrightness*ratio);
+ uint8_t b=(uint8_t)roundf(ledBrightness*(1.0f-ratio));
+ pixel.setPixelColor(0,pixel.Color(r,0,b));
+ pixel.show();
+}
 static void thermostatRefresh(){
+ thermostatLedUpdate();
  bool sensorAvailable=temperatureValid;
 #if DHT_GPIO < 0
  sensorAvailable=false; // Chip temperature must NEVER drive room heating.
@@ -443,6 +455,10 @@ void setup(){
  setPoint=constrain(thermostatPrefs.getFloat("target",21.0f),15.0f,30.0f);
  hysteresis=constrain(thermostatPrefs.getFloat("hyst",0.5f),0.2f,2.0f);
  heatingEnabled=thermostatPrefs.getBool("enabled",true);
+ ledTempMin=constrain(thermostatPrefs.getFloat("ledMin",14.0f),0.0f,40.0f);
+ ledTempMax=constrain(thermostatPrefs.getFloat("ledMax",28.0f),1.0f,50.0f);
+ if(ledTempMax-ledTempMin<0.5f){ledTempMin=14.0f;ledTempMax=28.0f;}
+ ledBrightness=(uint8_t)constrain((int)thermostatPrefs.getUInt("ledBri",48),0,255);
  Serial.println("\nES3C28P LVGL Peripheral Lab");
 #if DHT_GPIO >= 0
  dht.begin();
