@@ -2,13 +2,52 @@
 #include <AudioFileSourceFS.h>
 #include <AudioGeneratorMP3.h>
 #include <AudioGeneratorWAV.h>
-#include <AudioOutputI2S.h>
+#include <AudioOutput.h>
 #include <driver/i2s.h>
 // Audio jobs are processed in loop(), never inside an LVGL callback.
+
+class CodecI2SOutput : public AudioOutput {
+ bool active=false;
+ public:
+ bool begin() override {
+  i2s_config_t cfg={};
+  cfg.mode=(i2s_mode_t)(I2S_MODE_MASTER|I2S_MODE_TX);
+  cfg.sample_rate=hertz?hertz:44100;
+  cfg.bits_per_sample=I2S_BITS_PER_SAMPLE_16BIT;
+  cfg.channel_format=I2S_CHANNEL_FMT_RIGHT_LEFT;
+  cfg.communication_format=I2S_COMM_FORMAT_STAND_I2S;
+  cfg.dma_buf_count=8;cfg.dma_buf_len=256;
+  cfg.intr_alloc_flags=ESP_INTR_FLAG_LEVEL1;
+  cfg.use_apll=false;cfg.tx_desc_auto_clear=true;cfg.mclk_multiple=I2S_MCLK_MULTIPLE_256;
+  if(i2s_driver_install(I2S_NUM_1,&cfg,0,nullptr)!=ESP_OK)return false;
+  i2s_pin_config_t pins={};pins.mck_io_num=I2S_MCLK;pins.bck_io_num=I2S_BCLK;
+  pins.ws_io_num=I2S_WS;pins.data_out_num=I2S_DOUT;pins.data_in_num=I2S_PIN_NO_CHANGE;
+  if(i2s_set_pin(I2S_NUM_1,&pins)!=ESP_OK){i2s_driver_uninstall(I2S_NUM_1);return false;}
+  active=true;return true;
+ }
+ bool SetRate(int rate) override {
+  AudioOutput::SetRate(rate);
+  if(active)i2s_set_clk(I2S_NUM_1,rate,I2S_BITS_PER_SAMPLE_16BIT,I2S_CHANNEL_STEREO);
+  return true;
+ }
+ bool ConsumeSample(int16_t in[2]) override {
+  if(!active)return false;
+  int16_t samples[2]={in[0],in[1]};
+  MakeSampleStereo16(samples);
+  samples[0]=Amplify(samples[0]);samples[1]=Amplify(samples[1]);
+  size_t written=0;
+  return i2s_write(I2S_NUM_1,samples,sizeof(samples),&written,0)==ESP_OK && written==sizeof(samples);
+ }
+ bool stop() override {
+  if(active){i2s_zero_dma_buffer(I2S_NUM_1);i2s_driver_uninstall(I2S_NUM_1);active=false;}
+  return true;
+ }
+};
+
 static AudioFileSourceFS *audioSource=nullptr;
 static AudioGeneratorMP3 *mp3=nullptr;
 static AudioGeneratorWAV *wav=nullptr;
-static AudioOutputI2S *audioOutput=nullptr;
+static CodecI2SOutput *audioOutput=nullptr;
 static File audioRecording;
 static bool audioIsRecording=false;
 static uint32_t audioRecordBytes=0;
@@ -27,8 +66,7 @@ static bool audioPlayFile(const char *path){
  if(!sdOk||!codecOk||!path||!SD_MMC.exists(path))return false;
  audioStop();
  audioSource=new AudioFileSourceFS(SD_MMC,path);
- audioOutput=new AudioOutputI2S();
- audioOutput->SetPinout(I2S_BCLK,I2S_WS,I2S_DOUT,I2S_MCLK);
+ audioOutput=new CodecI2SOutput();
  audioOutput->SetGain(0.25f);
  bool ok=false;
  String name(path);name.toLowerCase();
@@ -60,7 +98,7 @@ static void audioFinishRecord(){
 static bool audioStartRecord(){
  if(!sdOk||!codecOk||audioIsRecording)return false;
  audioStop();
- audioRecording=SD_MMC.open("/record.wav",FILE_WRITE);
+ audioRecording=SD_MMC.open("/record.wav","w");
  if(!audioRecording)return false;
  audioRecording.seek(0);audioWriteHeader(audioRecording,0);audioRecording.seek(44);
  audioRecordBytes=0;
