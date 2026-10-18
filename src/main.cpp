@@ -488,6 +488,16 @@ void setup(){
  WiFi.mode(WIFI_STA);
  WiFi.setAutoReconnect(true);
  {String ssid=wifiPrefs.getString("ssid","");if(ssid.length()){WiFi.begin(ssid.c_str(),wifiPrefs.getString("password","").c_str());wifiRetryAt=millis();}}
+#if defined(ENABLE_28LCD_MATTER) && ENABLE_28LCD_MATTER
+ Serial.printf("[MATTER] Pre-init: internal free=%u, largest=%u, PSRAM=%u\n",
+   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+   (unsigned)ESP.getFreePsram());
+ matterThermostatBegin();
+ Serial.printf("[MATTER] Post-init: internal free=%u, largest=%u\n",
+   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+   (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+#endif
  lv_init();
  // Two 32-line internal DMA buffers. RGB565, partial redraw only.
  constexpr uint32_t bufferBytes=LCD_W*32*2;
@@ -513,7 +523,6 @@ void setup(){
  gateWebBegin();
  Serial.printf("[INIT] UI begin, heap=%u\\n",(unsigned)ESP.getFreeHeap());
  setupUI();
- matterThermostatBegin();
  Serial.printf("[INIT] UI ready, heap=%u\\n",(unsigned)ESP.getFreeHeap());
 #ifdef ENABLE_COPROCESSOR_UART
  coproBegin();
