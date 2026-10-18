@@ -21,7 +21,7 @@ static void uiTab(lv_obj_t *tab){
  lv_obj_set_style_pad_row(tab,11,0);
 }
 static void uiOnKeyboard(lv_event_t *e){
- lv_obj_t *target=lv_event_get_target(e);
+ lv_obj_t *target=lv_event_get_target_obj(e);
  if(lv_event_get_code(e)==LV_EVENT_FOCUSED){
    lv_keyboard_set_textarea(wifiKeyboard,target);
    lv_obj_clear_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
