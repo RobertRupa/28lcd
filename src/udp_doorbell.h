@@ -1,12 +1,16 @@
 #pragma once
-#include <WiFiUdp.h>
+#include <lwip/sockets.h>
+#include <lwip/inet.h>
+#include <fcntl.h>
+#include <errno.h>
 
 // Any non-empty UDP datagram on port 61631 triggers the doorbell.
 // Keep all audio operations in the Arduino loop (not in a network callback).
 static constexpr uint16_t DOORBELL_UDP_PORT = 61631;
 static const IPAddress DOORBELL_MULTICAST_GROUP(239, 255, 0, 1);
-static WiFiUDP doorbellUdp;
-static bool doorbellBound = false;
+static int doorbellSocket = -1;
+static uint32_t doorbellRetryAt = 0;
+static IPAddress doorbellBoundIP;
 static bool doorbellToneActive = false;
 static uint32_t doorbellToneFrame = 0;
 static float doorbellTonePhase = 0.0f;
@@ -106,44 +110,81 @@ static void doorbellPlay() {
  else Serial.println("[DOORBELL] I2S startup failed");
 }
 
+// One IPv4 socket on INADDR_ANY receives directed unicast and subnet broadcast.
+// IP_ADD_MEMBERSHIP additionally enables 239.255.0.1 multicast reception.
+static void doorbellSocketClose() {
+ if (doorbellSocket >= 0) {
+  close(doorbellSocket);
+  doorbellSocket = -1;
+ }
+}
+
+static bool doorbellSocketOpen() {
+ int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+ if (fd < 0) { Serial.printf("[DOORBELL] socket failed: %d\\n", errno); return false; }
+ int one = 1;
+ setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+ setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
+ sockaddr_in addr = {};
+ addr.sin_family = AF_INET;
+ addr.sin_port = htons(DOORBELL_UDP_PORT);
+ addr.sin_addr.s_addr = htonl(INADDR_ANY);
+ if (bind(fd, (sockaddr*)&addr, sizeof(addr)) != 0) {
+  Serial.printf("[DOORBELL] bind failed: %d\\n", errno);
+  close(fd); return false;
+ }
+ ip_mreq group = {};
+ group.imr_multiaddr.s_addr = inet_addr("239.255.0.1");
+ group.imr_interface.s_addr = (uint32_t)WiFi.localIP();
+ if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &group, sizeof(group)) != 0) {
+  Serial.printf("[DOORBELL] multicast join failed: %d (unicast/broadcast still active)\\n", errno);
+ }
+ int flags = fcntl(fd, F_GETFL, 0);
+ if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+ doorbellSocket = fd;
+ doorbellBoundIP = WiFi.localIP();
+ Serial.printf("[DOORBELL] Bound 0.0.0.0:%u | IP=%s | mask=%s | broadcast=%s | multicast=239.255.0.1\\n",
+  DOORBELL_UDP_PORT, WiFi.localIP().toString().c_str(),
+  WiFi.subnetMask().toString().c_str(), WiFi.broadcastIP().toString().c_str());
+ return true;
+}
+
 static void doorbellUdpService() {
  if (WiFi.status() != WL_CONNECTED) {
-  if (doorbellBound) {
-   doorbellUdp.stop();
-   doorbellBound = false;
-   Serial.println("[DOORBELL] UDP stopped (Wi-Fi disconnected)");
+  if (doorbellSocket >= 0) {
+   doorbellSocketClose();
+   Serial.println("[DOORBELL] Socket closed: Wi-Fi disconnected");
   }
   doorbellToneService();
   return;
  }
- if (!doorbellBound) {
-  // Bind INADDR_ANY and join multicast: unicast, subnet broadcast, multicast.
-  doorbellBound = doorbellUdp.beginMulticast(DOORBELL_MULTICAST_GROUP, DOORBELL_UDP_PORT) != 0;
-  if (doorbellBound)
-   Serial.printf("[DOORBELL] UDP %u: unicast %s, broadcast %s, multicast %s\n",
-    DOORBELL_UDP_PORT, WiFi.localIP().toString().c_str(),
-    WiFi.broadcastIP().toString().c_str(), DOORBELL_MULTICAST_GROUP.toString().c_str());
-  else {
-   static uint32_t lastError = 0;
-   if (millis() - lastError > 5000) {
-    lastError = millis();
-    Serial.println("[DOORBELL] UDP bind failed; retrying");
-   }
-  }
+ if (doorbellSocket >= 0 && doorbellBoundIP != WiFi.localIP()) {
+  doorbellSocketClose(); // DHCP address changed: rejoin on the new interface
  }
- if (doorbellBound) {
-  int packetSize = doorbellUdp.parsePacket();
-  if (packetSize > 0) {
-   // Drain the full datagram, including packets bigger than our input buffer.
+ if (doorbellSocket < 0 && (doorbellRetryAt == 0 || millis()-doorbellRetryAt >= 3000)) {
+  doorbellRetryAt = millis();
+  doorbellSocketOpen();
+ }
+ if (doorbellSocket >= 0) {
+  // Drain up to four queued packets without blocking LVGL or audio playback.
+  for (int n = 0; n < 4; ++n) {
    char payload[64];
-   int count = doorbellUdp.read((uint8_t*)payload, sizeof(payload) - 1);
-   if (count < 0) count = 0;
-   payload[count] = '\0';
-   while (doorbellUdp.available()) doorbellUdp.read();
+   sockaddr_in sender = {};
+   socklen_t senderLength = sizeof(sender);
+   int size = recvfrom(doorbellSocket, payload, sizeof(payload)-1, MSG_DONTWAIT,
+                       (sockaddr*)&sender, &senderLength);
+   if (size < 0) {
+    if (errno != EAGAIN && errno != EWOULDBLOCK)
+     Serial.printf("[DOORBELL] recvfrom error: %d\\n", errno);
+    break;
+   }
+   if (size == 0) continue;
+   payload[size] = '\\0';
+   IPAddress source(ntohl(sender.sin_addr.s_addr));
+   Serial.printf("[DOORBELL] UDP from %s:%u, bytes=%d, data=%.63s\\n",
+    source.toString().c_str(), ntohs(sender.sin_port), size, payload);
    uint32_t now = millis();
-   Serial.printf("[DOORBELL] UDP from %s:%u, bytes=%d, data=%.63s\n",
-    doorbellUdp.remoteIP().toString().c_str(), doorbellUdp.remotePort(), packetSize, payload);
-   if (!doorbellTriggeredBefore || now - doorbellLastTrigger >= DOORBELL_RETRIGGER_MS) {
+   if (!doorbellTriggeredBefore || now-doorbellLastTrigger >= DOORBELL_RETRIGGER_MS) {
     doorbellTriggeredBefore = true;
     doorbellLastTrigger = now;
     doorbellPlay();
