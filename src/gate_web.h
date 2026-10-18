@@ -1,6 +1,7 @@
 #pragma once
 #include <WebServer.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <esp_system.h>
 
 // All URLs are user-provisioned; no default actuation endpoints.
@@ -23,14 +24,22 @@ static String gateEsc(const String &s){
  }
  return out;
 }
+// Action destinations: private IPv4 HTTP or official SUPLA Direct HTTPS host.
+// No arbitrary public HTTPS targets, no URL userinfo, no fragments.
 static bool gateIsLanUrl(const String &url){
- if(!url.startsWith("http://")||url.length()>240)return false;
- int end=url.indexOf('/',7);
- String authority=url.substring(7,end<0?url.length():end);
- if(authority.length()==0||authority.indexOf('@')>=0||authority.indexOf('#')>=0)return false;
- String host=authority;int colon=host.indexOf(':');if(colon>=0)host=host.substring(0,colon);
+ if(url.length()>512 || (url.indexOf('\r')>=0) || (url.indexOf('\n')>=0) || url.indexOf('#')>=0)return false;
+ bool secure=url.startsWith("https://"),plain=url.startsWith("http://");
+ if(!secure&&!plain)return false;
+ int offset=secure?8:7, end=url.indexOf('/',offset);
+ String authority=url.substring(offset,end<0?url.length():end);
+ if(authority.isEmpty()||authority.indexOf('@')>=0||authority.indexOf(':')>=0)return false;
+ if(secure){
+   authority.toLowerCase();
+   // SUPLA Direct only. Must not accept spoofed suffixes.
+   return authority=="svr34.supla.org";
+ }
  IPAddress ip;
- if(!ip.fromString(host))return false;
+ if(!ip.fromString(authority))return false;
  return ip[0]==10||(ip[0]==192&&ip[1]==168)||(ip[0]==172&&ip[1]>=16&&ip[1]<=31);
 }
 static bool gateCameraUrlAllowed(const String &raw){
@@ -40,13 +49,20 @@ static bool gateCameraUrlAllowed(const String &raw){
 static bool gateRequest(uint8_t index,String &message){
  if(index>=3||gateBusy||millis()-gateLastAction<1500){message="Zajete / odczekaj";return false;}
  String url=gateUrls[index];
- if(!gateIsLanUrl(url)){message="Skonfiguruj lokalny URL HTTP";return false;}
+ if(!gateIsLanUrl(url)){message="Dozwolony prywatny HTTP lub HTTPS svr34.supla.org";return false;}
  if(WiFi.status()!=WL_CONNECTED){message="Brak Wi-Fi";return false;}
  gateBusy=true;gateLastAction=millis();
- HTTPClient client;client.setTimeout(1800);client.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+ HTTPClient client;client.setTimeout(5000);client.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
  bool ok=false;
- if(client.begin(url)){int code=client.GET();ok=code>=200&&code<300;message="HTTP "+String(code);client.end();}
- else message="Niepoprawny URL";
+ if(url.startsWith("https://")){
+   WiFiClientSecure tls;
+   // Validate certificate with current public CA bundle / trust anchor before production.
+   // Explicitly fail closed until a trust anchor is provisioned.
+   message="HTTPS wymaga skonfigurowanego zaufanego CA";
+ } else {
+   if(client.begin(url)){int code=client.GET();ok=code>=200&&code<300;message="HTTP "+String(code);client.end();}
+   else message="Niepoprawny URL";
+ }
  gateBusy=false;
  return ok;
 }
@@ -59,8 +75,8 @@ static void gatePage(){
  String page=F("<!doctype html><html lang='pl'><meta name='viewport' content='width=device-width,initial-scale=1'><title>ES3C28P</title><style>body{background:#0b1018;color:#f1f5f9;font:16px system-ui;max-width:760px;margin:auto;padding:18px}input,button{font:inherit;border-radius:10px;padding:12px;background:#24364b;color:white;border:1px solid #6b8198}input{width:96%;box-sizing:border-box}button{min-height:46px;background:#2368aa}label{display:block;margin:18px 0}section{border:1px solid #354759;border-radius:14px;padding:15px;margin:15px 0}small{color:#b9c9d9}</style><h1>ES3C28P</h1><p id='status'>Odczyt...</p>");
  page+=F("<section><h2>Brama i furtka</h2>");
  for(int i=0;i<3;i++){page+="<form method='POST' action='/action'><input type='hidden' name='idx' value='"+String(i)+"'><button onclick='return confirm(&quot;Wykonac akcje?&quot;)'>"+gateEsc(gateNames[i])+"</button></form>";}
- page+=F("</section><form method='POST' action='/save'><section><h2>GET URL akcji</h2><small>Dozwolone HTTP i prywatne adresy IPv4 LAN. Kazdy przycisk ma oddzielny URL.</small>");
- for(int i=0;i<3;i++)page+="<label>"+gateEsc(gateNames[i])+"<input name='gate"+String(i)+"' maxlength='240' value='"+gateEsc(gateUrls[i])+"'></label>";
+ page+=F("</section><form method='POST' action='/save'><section><h2>GET URL akcji</h2><small>Dozwolony HTTP na prywatny IPv4 lub HTTPS svr34.supla.org (wymaga CA). Kazdy przycisk ma oddzielny URL.</small>");
+ for(int i=0;i<3;i++)page+="<label>"+gateEsc(gateNames[i])+"<input name='gate"+String(i)+"' maxlength='512' value='"+gateEsc(gateUrls[i])+"'></label>";
  page+=F("</section><section><h2>Kamery</h2>");
  for(int i=0;i<4;i++){
   page+="<label>Kamera "+String(i+1)+" URL<input name='cam"+String(i)+"' maxlength='240' value='"+gateEsc(cameraUrls[i])+"'></label>";
