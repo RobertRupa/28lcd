@@ -12,6 +12,7 @@ static lv_image_dsc_t cameraImageDescriptor={};
 static lv_obj_t *cameraImageObject=nullptr;
 static lv_obj_t *cameraStatusObject=nullptr;
 static bool cameraActive=false;
+static String cameraLastError;
 static bool cameraCapturing=false;
 static size_t cameraFrameSize=0;
 static uint32_t cameraLastFrame=0;
@@ -35,10 +36,11 @@ static void cameraStop(){
 }
 static bool cameraStart(const char *url,const char *username=nullptr,const char *password=nullptr){
  cameraStop();
- if(WiFi.status()!=WL_CONNECTED||!url||strncmp(url,"http://",7)!=0)return false;
+ if(WiFi.status()!=WL_CONNECTED){cameraLastError="Wi-Fi offline";return false;}
+ if(!url||strncmp(url,"http://",7)!=0){cameraLastError="Niepoprawny URL";return false;}
  if(!cameraFrame)cameraFrame=(uint8_t*)heap_caps_malloc(cameraMaxFrame,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
  if(!cameraPixels)cameraPixels=(uint16_t*)heap_caps_malloc(cameraW*cameraH*sizeof(uint16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
- if(!cameraFrame||!cameraPixels)return false;
+ if(!cameraFrame||!cameraPixels){cameraLastError="Brak PSRAM";return false;}
  memset(cameraPixels,0,cameraW*cameraH*sizeof(uint16_t));
  cameraImageDescriptor.header.magic=LV_IMAGE_HEADER_MAGIC;
  cameraImageDescriptor.header.w=cameraW;cameraImageDescriptor.header.h=cameraH;
@@ -46,11 +48,15 @@ static bool cameraStart(const char *url,const char *username=nullptr,const char 
  cameraImageDescriptor.data_size=cameraW*cameraH*sizeof(uint16_t);
  cameraImageDescriptor.data=(const uint8_t*)cameraPixels;
  cameraHttp.setTimeout(1000);
- if(!cameraHttp.begin(url))return false;
+ if(!cameraHttp.begin(url)){cameraLastError="HTTP begin failed";return false;}
+ cameraHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
  if(username&&username[0])cameraHttp.setAuthorization(username,password?password:"");
- if(cameraHttp.GET()!=HTTP_CODE_OK){cameraHttp.end();return false;}
+ int httpCode=cameraHttp.GET();
+ if(httpCode!=HTTP_CODE_OK){cameraLastError="HTTP "+String(httpCode)+(httpCode<0?" "+cameraHttp.errorToString(httpCode):"");cameraHttp.end();return false;}
+ String contentType=cameraHttp.header("Content-Type");
+ Serial.printf("[CAM] HTTP %d, content-type=%s, endpoint=%s\\n",httpCode,contentType.c_str(),url);
  cameraStream=cameraHttp.getStreamPtr();
- cameraFrameSize=0;cameraCapturing=false;cameraActive=true;
+ cameraFrameSize=0;cameraCapturing=false;cameraActive=true;cameraLastError="";
  if(cameraStatusObject)lv_label_set_text(cameraStatusObject,"Podglad aktywny (HTTP JPEG/MJPEG)");
  return true;
 }
