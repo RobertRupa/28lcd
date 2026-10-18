@@ -70,8 +70,33 @@ static void uiAudioRecordNotice(lv_event_t *){
  if(audioIsRecording)audioFinishRecord();else if(!audioStartRecord())snprintf(audioMessage,sizeof(audioMessage),"Recording failed (SD/codec/I2S)");
  lv_label_set_text(audioInfoLabel,audioMessage);
 }
+static lv_obj_t *audioFileDropdown=nullptr;
+static String audioPaths[24];static int audioPathCount=0;
+static void uiAudioRefreshFiles(lv_event_t *){
+ audioPathCount=0;String choices="No compatible files";
+ if(sdOk){
+  File dir=SD_MMC.open("/");File item;
+  if(dir&&dir.isDirectory()){
+   choices="";
+   while((item=dir.openNextFile())&&audioPathCount<24){
+    String name=item.name();name.toLowerCase();
+    if(!item.isDirectory()&&(name.endsWith(".mp3")||name.endsWith(".wav"))){
+     audioPaths[audioPathCount]=String(item.name());
+     if(!audioPaths[audioPathCount].startsWith("/"))audioPaths[audioPathCount]="/"+audioPaths[audioPathCount];
+     if(audioPathCount)choices+="\\n";
+     choices+=audioPaths[audioPathCount];audioPathCount++;
+    }
+    item.close();
+   }
+   dir.close();
+  }
+ }
+ if(!audioPathCount)choices="No compatible files";
+ if(audioFileDropdown)lv_dropdown_set_options(audioFileDropdown,choices.c_str());
+}
 static void uiAudioPlayNotice(lv_event_t *){
- if(!audioPlayFile("/test.mp3")&&!audioPlayFile("/test.wav"))snprintf(audioMessage,sizeof(audioMessage),"Put /test.mp3 or /test.wav on SD");
+ uint16_t index=audioFileDropdown?lv_dropdown_get_selected(audioFileDropdown):0;
+ if(index>=audioPathCount||!audioPlayFile(audioPaths[index].c_str()))snprintf(audioMessage,sizeof(audioMessage),"Select playable WAV/MP3 file");
  lv_label_set_text(audioInfoLabel,audioMessage);
 }
 static void uiMakeWifi(lv_obj_t *tab){
@@ -105,9 +130,12 @@ static void uiMakeAudio(lv_obj_t *tab){
  button(tab,"Test 440 Hz",onTone);
  button(tab,"Pokaz pliki SD",onSd);
  sdLabel=label(tab,"Oczekiwanie na karte microSD");
+ audioFileDropdown=lv_dropdown_create(tab);lv_obj_set_width(audioFileDropdown,205);
+ button(tab,"Odswiez pliki audio",uiAudioRefreshFiles);
  button(tab,"Odtwarzaj WAV / MP3",uiAudioPlayNotice);
  button(tab,"Nagraj WAV na SD",uiAudioRecordNotice);
- audioInfoLabel=label(tab,"SD: /test.mp3 or /test.wav; record /record.wav (10s)");
+ audioInfoLabel=label(tab,"SD: wybierz plik lub nagraj /record.wav (10s)");
+ uiAudioRefreshFiles(nullptr);
 }
 static lv_obj_t *cameraUrlInput=nullptr;
 static void uiCameraStart(lv_event_t *){
