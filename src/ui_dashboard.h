@@ -158,71 +158,28 @@ static void uiMakeAudio(lv_obj_t *tab){
  audioInfoLabel=label(tab,"SD: wybierz plik lub nagraj /record.wav (10s)");
  uiAudioRefreshFiles(nullptr);
 }
-static lv_obj_t *cameraSelector=nullptr,*cameraUserInput=nullptr,*cameraPassInput=nullptr;
-static Preferences cameraPrefs;
+static lv_obj_t *cameraSelector=nullptr;
 static uint8_t cameraIndex=0;
 static void uiCameraSelect(lv_event_t *){
  cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
- char msg[80];snprintf(msg,sizeof(msg),"Kamera %u: 192.168.68.%u",cameraIndex+1,51+cameraIndex);
- if(cameraStatusObject)lv_label_set_text(cameraStatusObject,msg);
-}
-static void uiCameraReveal(lv_event_t *){
- bool hidden=lv_textarea_get_password_mode(cameraPassInput);
- if(hidden && strlen(lv_textarea_get_text(cameraPassInput))==0){
-  String password=cameraPrefs.getString("pass","");
-  lv_textarea_set_text(cameraPassInput,password.c_str());
- }
- lv_textarea_set_password_mode(cameraPassInput,!hidden);
-}
-static void uiCameraCredentialsSave(lv_event_t *){
- String user=lv_textarea_get_text(cameraUserInput);
- String pass=lv_textarea_get_text(cameraPassInput);
- if(user.length()>32||pass.length()>64){
-  lv_label_set_text(cameraStatusObject,"Zbyt dlugie dane dostepu");return;
- }
- cameraPrefs.putString("user",user);
- cameraPrefs.putString("pass",pass);
- lv_textarea_set_text(cameraPassInput,"");
- lv_label_set_text(cameraStatusObject,"Dane dostepu zapisane lokalnie (NVS)");
+ if(cameraStatusObject)lv_label_set_text_fmt(cameraStatusObject,"Kamera %u",cameraIndex+1);
 }
 static void uiCameraStart(lv_event_t *){
  cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
- char url[125];
- snprintf(url,sizeof(url),"%s",cameraUrls[cameraIndex].c_str());
- String user=cameraPrefs.getString("user","");
- String pass=cameraPrefs.getString("pass","");
- if(!cameraStart(url,user.c_str(),pass.c_str())&&cameraStatusObject)
+ if(!cameraStart(cameraUrls[cameraIndex].c_str(),cameraBasicUser[cameraIndex].c_str(),cameraBasicPass[cameraIndex].c_str())&&cameraStatusObject)
   lv_label_set_text(cameraStatusObject,("Kamera: "+cameraLastError).c_str());
 }
 static void uiCameraStop(lv_event_t *){cameraStop();}
 static void uiMakeCamera(lv_obj_t *tab){
- uiTab(tab);uiTitle(tab,"KAMERY IP","Wybierz strumien MJPEG");
- cameraPrefs.begin("ipcamera",false);
- cameraSelector=lv_dropdown_create(tab);
- lv_obj_set_width(cameraSelector,205);
- lv_dropdown_set_options(cameraSelector,
-  "Kamera 1  /  .51\nKamera 2  /  .52\nKamera 3  /  .53\nKamera 4  /  .54");
+ uiTab(tab);uiTitle(tab,"KAMERY IP","Podglad; konfiguracja tylko WWW");
+ cameraSelector=lv_dropdown_create(tab);lv_obj_set_width(cameraSelector,205);
+ lv_dropdown_set_options(cameraSelector,"Kamera 1\nKamera 2\nKamera 3\nKamera 4");
  lv_obj_add_event_cb(cameraSelector,uiCameraSelect,LV_EVENT_VALUE_CHANGED,nullptr);
- cameraUserInput=lv_textarea_create(tab);lv_obj_set_width(cameraUserInput,205);
- lv_textarea_set_one_line(cameraUserInput,true);
- lv_textarea_set_placeholder_text(cameraUserInput,"Login kamer");
- String username=cameraPrefs.getString("user","");
- lv_textarea_set_text(cameraUserInput,username.c_str());
- cameraPassInput=lv_textarea_create(tab);lv_obj_set_width(cameraPassInput,205);
- lv_textarea_set_one_line(cameraPassInput,true);
- lv_textarea_set_password_mode(cameraPassInput,true);
- lv_textarea_set_placeholder_text(cameraPassInput,"Haslo (nie wyswietlane)");
- lv_obj_add_event_cb(cameraUserInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
- lv_obj_add_event_cb(cameraUserInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
- lv_obj_add_event_cb(cameraPassInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
- lv_obj_add_event_cb(cameraPassInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
- button(tab,"Pokaz / ukryj haslo",uiCameraReveal);
- button(tab,"Zapisz dane kamer",uiCameraCredentialsSave);
- button(tab,"Uruchom wybrana",uiCameraStart);
+ button(tab,"Uruchom kamere",uiCameraStart);
  button(tab,"Zatrzymaj",uiCameraStop);
- cameraStatusObject=label(tab,"192.168.68.51-54 / MJPEG subtype=1");
+ cameraStatusObject=label(tab,"Wybierz kamere");
  cameraImageObject=lv_image_create(tab);
- label(tab,"Jeden podglad na raz. JPEG maks. 240x180.");
+ label(tab,"URL i Basic Auth ustawiasz w panelu WWW.");
 }
 static void uiMakeDisplay(lv_obj_t *tab){
  uiTab(tab);uiTitle(tab,"DISPLAY","Ekran i dotyk");
@@ -255,6 +212,24 @@ static void uiMakeRgb(lv_obj_t *tab){
 // Blade-style navigation: four readable actions rather than eight squeezed tabs.
 static lv_obj_t *bladePages[11]={};
 static lv_obj_t *bladeHint=nullptr;
+static lv_obj_t *edgePullVisual=nullptr;
+static int16_t edgePullShown=0;
+static void edgePullUpdate(){
+ if(!edgePullVisual)return;
+ int16_t delta=edgePull;
+ if(delta==edgePullShown)return;
+ edgePullShown=delta;
+ if(abs(delta)<8){lv_obj_add_flag(edgePullVisual,LV_OBJ_FLAG_HIDDEN);return;}
+ int16_t width=constrain(abs(delta)/2+5,10,58);
+ lv_obj_set_size(edgePullVisual,width,LCD_H-38);
+ lv_obj_set_pos(edgePullVisual,delta>0?0:LCD_W-width,0);
+ lv_obj_set_style_bg_color(edgePullVisual,lv_color_hex(0x3E9FDB),0);
+ lv_obj_set_style_bg_opa(edgePullVisual,(lv_opa_t)constrain(55+abs(delta),60,160),0);
+ lv_obj_remove_flag(edgePullVisual,LV_OBJ_FLAG_HIDDEN);
+ lv_obj_move_foreground(edgePullVisual);
+ if(fpsOverlay)lv_obj_move_foreground(fpsOverlay);
+}
+
 static uint8_t bladePage=0;
 static bool bladeAnimating=false;
 static void bladeAnimDone(lv_anim_t *a){

@@ -34,10 +34,28 @@ static void cameraStop(){
  cameraActive=false;cameraCapturing=false;cameraStream=nullptr;cameraHttp.end();
  if(cameraStatusObject)lv_label_set_text(cameraStatusObject,"Podglad zatrzymany");
 }
+// Extract optional URL userinfo without leaking credentials into HTTP logs.
+static bool cameraResolveUrl(const String &raw,String &clean,String &user,String &pass){
+ if(!raw.startsWith("http://"))return false;
+ int authorityEnd=raw.indexOf('/',7);
+ if(authorityEnd<0)authorityEnd=raw.length();
+ int at=raw.indexOf('@',7);
+ clean=raw;
+ if(at>7&&at<authorityEnd){
+  String auth=raw.substring(7,at);
+  int delim=auth.indexOf(':');
+  if(delim<=0)return false;
+  user=auth.substring(0,delim);
+  pass=auth.substring(delim+1);
+  clean="http://"+raw.substring(at+1);
+ }
+ return true;
+}
 static bool cameraStart(const char *url,const char *username=nullptr,const char *password=nullptr){
  cameraStop();
  if(WiFi.status()!=WL_CONNECTED){cameraLastError="Wi-Fi offline";return false;}
- if(!url||strncmp(url,"http://",7)!=0){cameraLastError="Niepoprawny URL";return false;}
+ String clean,user=username?username:"",pass=password?password:"";
+ if(!url||!cameraResolveUrl(String(url),clean,user,pass)){cameraLastError="Niepoprawny URL";return false;}
  if(!cameraFrame)cameraFrame=(uint8_t*)heap_caps_malloc(cameraMaxFrame,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
  if(!cameraPixels)cameraPixels=(uint16_t*)heap_caps_malloc(cameraW*cameraH*sizeof(uint16_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
  if(!cameraFrame||!cameraPixels){cameraLastError="Brak PSRAM";return false;}
@@ -48,13 +66,13 @@ static bool cameraStart(const char *url,const char *username=nullptr,const char 
  cameraImageDescriptor.data_size=cameraW*cameraH*sizeof(uint16_t);
  cameraImageDescriptor.data=(const uint8_t*)cameraPixels;
  cameraHttp.setTimeout(1000);
- if(!cameraHttp.begin(url)){cameraLastError="HTTP begin failed";return false;}
+ if(!cameraHttp.begin(clean)){cameraLastError="HTTP begin failed";return false;}
  cameraHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
- if(username&&username[0])cameraHttp.setAuthorization(username,password?password:"");
+ if(user.length())cameraHttp.setAuthorization(user.c_str(),pass.c_str());
  int httpCode=cameraHttp.GET();
  if(httpCode!=HTTP_CODE_OK){cameraLastError="HTTP "+String(httpCode)+(httpCode<0?" "+cameraHttp.errorToString(httpCode):"");cameraHttp.end();return false;}
  String contentType=cameraHttp.header("Content-Type");
- Serial.printf("[CAM] HTTP %d, content-type=%s, endpoint=%s\\n",httpCode,contentType.c_str(),url);
+ Serial.printf("[CAM] HTTP %d, content-type=%s\\n",httpCode,contentType.c_str());
  cameraStream=cameraHttp.getStreamPtr();
  cameraFrameSize=0;cameraCapturing=false;cameraActive=true;cameraLastError="";
  if(cameraStatusObject)lv_label_set_text(cameraStatusObject,"Podglad aktywny (HTTP JPEG/MJPEG)");
