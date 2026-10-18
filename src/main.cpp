@@ -88,7 +88,7 @@ static void onLed(lv_event_t*){
  Serial.printf("[RGB] state=%u\n",ledColor);
 }
 static void onBrightness(lv_event_t *e){
- auto *s=lv_event_get_target(e);lcd.setBrightness(lv_slider_get_value(s));
+ auto *s=lv_event_get_target_obj(e);lcd.setBrightness(lv_slider_get_value(s));
 }
 static void onWifi(lv_event_t*){
  if(wifiLabel)lv_label_set_text(wifiLabel,"Skan Wi-Fi...");
@@ -190,7 +190,7 @@ static void thermostatRefresh(){
  if(adminLabel){snprintf(b,sizeof(b),"Histereza %.1f°C | %s\nTemperatura symulowana\nWyjscie przekaznika: NIEPRZYPISANE",hysteresis,heatingEnabled?"AUTO":"OFF");lv_label_set_text(adminLabel,b);}
 }
 static void onTarget(lv_event_t *e){
- setPoint=lv_slider_get_value(lv_event_get_target(e))/10.0f;
+ setPoint=lv_slider_get_value(lv_event_get_target_obj(e))/10.0f;
  thermostatPrefs.putFloat("target",setPoint);thermostatRefresh();
 }
 static void onSimulation(lv_event_t *e){
@@ -200,11 +200,11 @@ static void onSimulation(lv_event_t *e){
  // Fallback sensor is read-only. No simulated room temperature.\n (void)e;
 }
 static void onHeatEnable(lv_event_t *e){
- heatingEnabled=lv_obj_has_state(lv_event_get_target(e),LV_STATE_CHECKED);
+ heatingEnabled=lv_obj_has_state(lv_event_get_target_obj(e),LV_STATE_CHECKED);
  thermostatPrefs.putBool("enabled",heatingEnabled);thermostatRefresh();
 }
 static void onHysteresis(lv_event_t *e){
- hysteresis=lv_slider_get_value(lv_event_get_target(e))/10.0f;
+ hysteresis=lv_slider_get_value(lv_event_get_target_obj(e))/10.0f;
  thermostatPrefs.putFloat("hyst",hysteresis);thermostatRefresh();
 }
 static lv_obj_t* makeHeading(lv_obj_t *parent,const char *str,uint8_t fontSize=0){
