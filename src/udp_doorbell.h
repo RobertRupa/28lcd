@@ -118,7 +118,7 @@ static void doorbellUdpService() {
  if (!doorbellBound) {
   doorbellBound = doorbellUdp.begin(DOORBELL_UDP_PORT) != 0;
   if (doorbellBound)
-   Serial.printf("[DOORBELL] Listening UDP %s:%u\\n", WiFi.localIP().toString().c_str(), DOORBELL_UDP_PORT);
+   Serial.printf("[DOORBELL] Listening UDP %s:%u\n", WiFi.localIP().toString().c_str(), DOORBELL_UDP_PORT);
   else {
    static uint32_t lastError = 0;
    if (millis() - lastError > 5000) {
@@ -134,10 +134,10 @@ static void doorbellUdpService() {
    char payload[64];
    int count = doorbellUdp.read((uint8_t*)payload, sizeof(payload) - 1);
    if (count < 0) count = 0;
-   payload[count] = '\\0';
+   payload[count] = '\0';
    while (doorbellUdp.available()) doorbellUdp.read();
    uint32_t now = millis();
-   Serial.printf("[DOORBELL] UDP from %s:%u, bytes=%d, data=%.63s\\n",
+   Serial.printf("[DOORBELL] UDP from %s:%u, bytes=%d, data=%.63s\n",
     doorbellUdp.remoteIP().toString().c_str(), doorbellUdp.remotePort(), packetSize, payload);
    if (!doorbellTriggeredBefore || now - doorbellLastTrigger >= DOORBELL_RETRIGGER_MS) {
     doorbellTriggeredBefore = true;
