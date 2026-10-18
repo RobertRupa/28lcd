@@ -80,3 +80,80 @@ cd 28lcd
 Po otwarciu katalogu w VS Code mozna uzyc rozszerzenia PlatformIO. Projekt ma zadeklarowane LVGL 8, LovyanGFX i Adafruit NeoPixel.
 
 Ograniczenia: kompilacja i test na fizycznej plytce nie zostaly przeprowadzone w ramach tej aktualizacji.
+
+
+## Dashboard LVGL — gałąź `feature/lvgl-dashboard`
+
+Ta gałąź przebudowuje interfejs na 7 widoków LVGL 8: DOM, RADIO, AUDIO, LCD, BAT, RGB, ADMIN.
+Nowe widoki: `src/ui_dashboard.h`. Zachowane działające sterowniki ILI9341, FT6336, ES8311, SD_MMC i WS2812 z projektu bazowego.
+
+### Status funkcjonalny (nie mylić GUI z kompletnym sterownikiem)
+
+| Funkcja | Status |
+|---|---|
+| Termostat, nastawa/histereza NVS | Zaimplementowano demonstrację, bez przekaźnika |
+| DHT11/DHT22 | Opcjonalne odczyty na GPIO2, po konfiguracji build |
+| Wi-Fi SSID + hasło w NVS | Dodano UI, zapis, ponowne łączenie i usuwanie |
+| Skan Wi-Fi/BLE | Zachowane; operacje blokujące GUI na czas skanowania |
+| LCD i dotyk | Regulacja jasności, pole testowe z koordynatami |
+| WS2812 | Zachowana zmiana kolorów |
+| ES8311 | Zachowany test 440 Hz |
+| SD | Zachowana lista plików |
+| Nagranie WAV / odtworzenie WAV / MP3 | **Niezaimplementowane** — przyciski informacyjne |
+| Bateria | Szacowany odczyt ADC, wymagana kalibracja dzielnika |
+| Thread/Zigbee ESP32-C5/C6/H2 | **Niezaimplementowane** — wymagane połączenie RCP i protokół |
+| CCTV MJPEG/RTSP | **Niezaimplementowane** — wymagany transport, dekoder i wydajnościowe testy |
+
+### Opcjonalny czujnik temperatury DHT
+
+Domyślnie `DHT_GPIO=-1`: termostat używa temperatury symulowanej.
+Aby przełączyć na fizyczny czujnik, dodaj do `build_flags` w `platformio.ini`:
+
+```ini
+  -DDHT_GPIO=2
+  -DDHT_SENSOR_TYPE=22
+```
+
+Dla DHT11 ustaw `-DDHT_SENSOR_TYPE=11`. DHT DATA podłącz do **GPIO2**, masa do GND, zasilanie zgodne z modułem (zalecane 3.3 V), w razie potrzeby rezystor podciągający DATA do 3.3 V. Przy błędzie odczytu DHT zapotrzebowanie na grzanie w logice jest zerowane. **Nie jest to gotowe urządzenie bezpieczeństwa cieplnego.**
+
+### Koprocesor Thread / Zigbee
+
+ESP32-S3 nie posiada radia 802.15.4. Do Thread/Zigbee potrzebny jest zewnętrzny **ESP32-C5/C6/H2**.
+Na płytce dostępne są np. GPIO43 (RX0) i GPIO44 (TX0), ale współdzielą one UART0 — zanim podłączysz RCP, skonfiguruj konsolę USB i sprawdź bootlog oraz poziomy 3.3 V. Sama wymiana ramek UART nie implementuje OpenThread Border Routera: potrzebny jest Spinel RCP / warstwa hosta i odpowiednia integracja sieci IP.
+Wykonywanie poleceń termostatu na zdalnym przekaźniku powinno wymagać ACK, watchdog i timeout wyłączający przekaźnik, przy braku danych/łączności.
+
+### Ograniczenia
+
+- Hasło Wi-Fi jest przechowywane w NVS przez `Preferences` — **nie gwarantuje to szyfrowania flash**. W urządzeniu produkcyjnym należy rozważyć NVS encryption / flash encryption.
+- Nie dokonano kompilacji PlatformIO ani testu na płytce w ramach tych zmian.
+- Na LCD 240x320 zawartość widoków przewija się w pionie; pasek zakładek przewija się w poziomie.
+- UI zostaje na LVGL **8.3**, a nie 9.x — to świadomy etap migracji bez zmiany sprawdzonych sterowników.
+
+## Media + UART implementation (feature branch, experimental)
+
+### Audio ES8311
+- `/test.mp3` or `/test.wav` on SD -> AUDIO -> Play; non-blocking decoding via ESP8266Audio 1.9.7, I2S1 output with MCLK GPIO4.
+- AUDIO -> Record starts 10-second mono 16-kHz WAV to `/record.wav`; another press stops.
+- **Microphone ADC setup on ES8311 still needs board validation.** The code configures I2S RX; ES8311 must be initialized for ADC recording with the appropriate input path/gain. An empty/silent recording is possible until this is verified.
+- The existing 440-Hz test is synchronous and should not be launched during playback/recording.
+
+### CCTV MJPEG
+- Connect Wi-Fi under RADIO.
+- CCTV -> HTTP URL, e.g. `http://192.168.1.100/mjpeg`; Start.
+- Server must expose **HTTP** MJPEG (multipart) with JPEG frames <= 240x180 and <=120 KB per frame; limited to ~3 fps.
+- Also accepts continuous concatenated JPEG frames. Single JPEG still-image URLs stop at EOF.
+- No RTSP, H.264, HTTPS, MJPEG HTTP authentication, camera discovery or sound.
+- Network stream decoding runs in UI loop with small read budgets; this is an initial implementation to hardware-test for stalls and image corruption.
+
+### External ESP32-C5/C6/H2 (example transport, not a Thread stack)
+- Optional `-DENABLE_COPROCESSOR_UART` in ES3C28P build flags activates UART1 on GPIO43 RX / GPIO44 TX.
+- Bidirectional wiring S3 TX44 -> module RX and S3 RX43 <- module TX, common GND, 3.3V signalling; ensure USB CDC logs and prevent conflicts with UART0 boot activity.
+- The standalone example `coprocessor/` targets XIAO ESP32-C6. Adjust `LINK_RX_GPIO`, `LINK_TX_GPIO`, `RELAY_GPIO` in its own `platformio.ini`. Defaults to relay **disabled**.
+- Host sends a heartbeat every 500 ms in format `$TH,sequence,heat,XOR\n`; controller acknowledges `$ACK,sequence,state,XOR\n`.
+- Controller forces relay OFF after 1.5 seconds without a valid command. Host never requests heat from simulated temperature, only from a valid DHT reading.
+- No pairing, authentication or OpenThread operation is implemented. **A true Thread/Matter thermostat/receiver still needs dedicated OpenThread application firmware and commissioning.** This UART example only establishes relay-control transport.
+- External relay needs appropriate electrical isolation, safe defaults and an independent temperature safety cutoff. Not suitable for unattended mains heating without separate hardware failsafe.
+
+### Build validation
+- Added GitHub Actions workflow `.github/workflows/build.yml` for the S3 and coprocessor firmware.
+- No local PlatformIO toolchain or physical ES3C28P was available to validate the changes in this session. Verify status of the GitHub Actions run and test on hardware before merging PR #1.

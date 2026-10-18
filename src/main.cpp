@@ -10,6 +10,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <math.h>
 #include <Preferences.h>
+#include <DHT.h>
 #include "board_config.h"
 #include "display.h"
 
@@ -152,7 +153,12 @@ static void onI2c(lv_event_t*){
 
 static Preferences thermostatPrefs;
 static float setPoint=21.0f;
-static float roomTemp=20.0f; // TEST: simulated value; no physical sensor configured
+static float roomTemp=20.0f; // simulated unless DHT_GPIO >= 0
+#if DHT_GPIO >= 0
+static DHT dht(DHT_GPIO,DHT_SENSOR_TYPE);
+static uint32_t lastDhtRead=0;
+static bool dhtOk=false;
+#endif
 static float hysteresis=0.5f;
 static bool heatingEnabled=true;
 static bool heatingDemand=false; // Logic only; no relay GPIO is driven
@@ -160,7 +166,11 @@ static lv_obj_t *roomLabel=nullptr,*targetLabel=nullptr,*heatLabel=nullptr,*ther
 static lv_obj_t *targetSlider=nullptr,*simulationSlider=nullptr,*heatSwitch=nullptr,*hysteresisSlider=nullptr;
 
 static void thermostatRefresh(){
- if(heatingEnabled){
+ bool sensorAvailable=true;
+#if DHT_GPIO >= 0
+ sensorAvailable=dhtOk;
+#endif
+ if(heatingEnabled && sensorAvailable){
   if(heatingDemand && roomTemp >= setPoint+hysteresis/2.0f) heatingDemand=false;
   else if(!heatingDemand && roomTemp <= setPoint-hysteresis/2.0f) heatingDemand=true;
  } else heatingDemand=false;
@@ -175,6 +185,9 @@ static void onTarget(lv_event_t *e){
  thermostatPrefs.putFloat("target",setPoint);thermostatRefresh();
 }
 static void onSimulation(lv_event_t *e){
+#if DHT_GPIO >= 0
+ return; // Live sensor owns the temperature, simulation disabled.
+#endif
  roomTemp=lv_slider_get_value(lv_event_get_target(e))/10.0f;thermostatRefresh();
 }
 static void onHeatEnable(lv_event_t *e){
@@ -208,7 +221,13 @@ static void makeThermostat(lv_obj_t *tab){
  lv_slider_set_value(targetSlider,(int)(setPoint*10),LV_ANIM_OFF);
  lv_obj_add_event_cb(targetSlider,onTarget,LV_EVENT_VALUE_CHANGED,nullptr);
  heatLabel=makeHeading(tab,"GRZANIE: OFF");
- thermoNote=makeHeading(tab,"DEMO - temperatura symulowana");
+ thermoNote=makeHeading(tab,
+#if DHT_GPIO >= 0
+ "Czujnik DHT GPIO2 (odczyt co 2.5s)"
+#else
+ "DEMO - temperatura symulowana"
+#endif
+ );
  lv_obj_set_style_text_color(thermoNote,lv_color_hex(0xFBBF24),0);
  thermostatRefresh();
 }
@@ -237,36 +256,23 @@ static void makeAdmin(lv_obj_t *tab){
  thermostatRefresh();
 }
 
-static void setupUI(){
- lv_obj_t *tabs=lv_tabview_create(lv_scr_act(),LV_DIR_TOP,34);
- lv_obj_t *room=lv_tabview_add_tab(tabs,"POKOJ");
- lv_obj_t *admin=lv_tabview_add_tab(tabs,"ADMIN");
- lv_obj_t *hardware=lv_tabview_add_tab(tabs,"TESTY");
- lv_obj_t *storage=lv_tabview_add_tab(tabs,"SD/WIFI");
- makeThermostat(room);
- makeAdmin(admin);
- lv_obj_set_flex_flow(hardware,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(hardware,8,0);
- lv_obj_set_flex_flow(storage,LV_FLEX_FLOW_COLUMN);lv_obj_set_style_pad_all(storage,8,0);
- button(hardware,"RGB: zmien kolor",onLed);
- label(hardware,"Podswietlenie LCD:");
- lv_obj_t *slider=lv_slider_create(hardware);lv_obj_set_width(slider,195);
- lv_slider_set_range(slider,15,255);lv_slider_set_value(slider,160,LV_ANIM_OFF);
- lv_obj_add_event_cb(slider,onBrightness,LV_EVENT_VALUE_CHANGED,nullptr);
- button(hardware,"Test glosnika 440 Hz",onTone);
- button(hardware,"Skanuj I2C -> USB",onI2c);
- label(hardware,"BOOT: odczyt w ADMIN.");
- button(storage,"Pokaz pliki microSD",onSd);sdLabel=label(storage,"Wloz karte i nacisnij przycisk.");
- button(storage,"Skanuj sieci Wi-Fi",onWifi);wifiLabel=label(storage,"Wi-Fi bez zapisanego hasla.");
- button(storage,"Skanuj Bluetooth LE",onBle);bleLabel=label(storage,"BLE nieaktywne do czasu testu.");
- statusUpdate();
-}
+#include "audio_engine.h"
+#include "camera_engine.h"
+#include "coprocessor.h"
+#include "ui_dashboard.h"
+static void setupUI(){uiSetupDashboard();}
+
 void setup(){
  Serial.begin(115200);delay(500);
  thermostatPrefs.begin("thermostat",false);
+ wifiPrefs.begin("wifi",false);
  setPoint=constrain(thermostatPrefs.getFloat("target",21.0f),15.0f,30.0f);
  hysteresis=constrain(thermostatPrefs.getFloat("hyst",0.5f),0.2f,2.0f);
  heatingEnabled=thermostatPrefs.getBool("enabled",true);
  Serial.println("\nES3C28P LVGL Peripheral Lab");
+#if DHT_GPIO >= 0
+ dht.begin();
+#endif
  pinMode(BOOT_GPIO,INPUT_PULLUP);pinMode(AMP_EN,OUTPUT);digitalWrite(AMP_EN,HIGH);
  pixel.begin();pixel.clear();pixel.show();
  Wire.begin(TOUCH_SDA,TOUCH_SCL,400000);
@@ -289,9 +295,17 @@ void setup(){
  const esp_timer_create_args_t args={.callback=&tick,.arg=nullptr,.dispatch_method=ESP_TIMER_TASK,.name="lv_tick",.skip_unhandled_events=true};
  esp_timer_handle_t th;esp_timer_create(&args,&th);esp_timer_start_periodic(th,1000);
  setupUI();
+#ifdef ENABLE_COPROCESSOR_UART
+ coproBegin();
+#endif
  Serial.printf("Touch=%d Codec=%d SD=%d PSRAM=%d\n",touchOk,codecOk,sdOk,psramFound());
 }
-void loop(){lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();
+void loop(){
+ audioService();coproService();cameraService();
+#if DHT_GPIO >= 0
+ if(millis()-lastDhtRead>=2500){lastDhtRead=millis();float t=dht.readTemperature();dhtOk=isfinite(t);if(dhtOk){roomTemp=t;thermostatRefresh();}else{heatingDemand=false;thermostatRefresh();}}
+#endif
+ lv_timer_handler();if(millis()-lastUpdate>500){lastUpdate=millis();statusUpdate();uiPowerRefresh();
  int raw=analogRead(BAT_ADC);float voltage=(raw/4095.0f)*3.3f*BATTERY_DIVIDER_RATIO;
  char b[96];snprintf(b,sizeof(b),"BAT ADC: %d (szac. %.2f V*)",raw,voltage);
  if(batteryLabel)lv_label_set_text(batteryLabel,b);
