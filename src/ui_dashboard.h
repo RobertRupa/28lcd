@@ -15,6 +15,7 @@ static void uiTitle(lv_obj_t *parent,const char *heading,const char *sub){
 }
 static void uiTab(lv_obj_t *tab){
  lv_obj_set_style_bg_color(tab,lv_color_hex(0x0B1018),0);
+ lv_obj_set_style_bg_opa(tab,LV_OPA_COVER,0);
  lv_obj_set_style_pad_all(tab,10,0);
  lv_obj_set_flex_flow(tab,LV_FLEX_FLOW_COLUMN);
  lv_obj_set_flex_align(tab,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
@@ -26,6 +27,8 @@ static void uiOnKeyboard(lv_event_t *e){
  lv_obj_t *target=lv_event_get_target_obj(e);
  if(lv_event_get_code(e)==LV_EVENT_FOCUSED){
    lv_keyboard_set_textarea(wifiKeyboard,target);
+   lv_obj_move_foreground(wifiKeyboard);
+   lv_obj_scroll_to_view(target,LV_ANIM_OFF);
    lv_obj_clear_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
  } else if(lv_event_get_code(e)==LV_EVENT_DEFOCUSED){
    lv_obj_add_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
@@ -37,6 +40,14 @@ static void uiOnKeyboardDone(lv_event_t *e){
   lv_obj_clear_state(wifiSsidInput,LV_STATE_FOCUSED);
   lv_obj_clear_state(wifiPassInput,LV_STATE_FOCUSED);
  }
+}
+static void uiWifiReveal(lv_event_t *){
+ bool old=lv_textarea_get_password_mode(wifiPassInput);
+ if(!old && !lv_textarea_get_text(wifiPassInput)[0]){
+  String stored=wifiPrefs.getString("password","");
+  lv_textarea_set_text(wifiPassInput,stored.c_str());
+ }
+ lv_textarea_set_password_mode(wifiPassInput,!old);
 }
 static void uiWifiSave(lv_event_t *){
  const char *ssid=lv_textarea_get_text(wifiSsidInput);
@@ -114,6 +125,7 @@ static void uiMakeWifi(lv_obj_t *tab){
  lv_obj_add_event_cb(wifiPassInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
  String ssid=wifiPrefs.getString("ssid","");
  lv_textarea_set_text(wifiSsidInput,ssid.c_str());
+ button(tab,"Pokaz / ukryj haslo",uiWifiReveal);
  button(tab,"Zapisz i polacz",uiWifiSave);
  button(tab,"Polacz ponownie",uiWifiConnect);
  button(tab,"Usun zapisane Wi-Fi",uiWifiForget);
@@ -123,8 +135,15 @@ static void uiMakeWifi(lv_obj_t *tab){
  label(tab,"ESP32-S3: Wi-Fi 2.4 GHz i BLE. Thread/Zigbee wymagaja zewnetrznego ESP32-C5/C6/H2 (RCP).");
  label(tab,"RCP: UART GPIO43 RX / GPIO44 TX wymaga przeniesienia logow UART0 na USB CDC i osobnego firmware.");
  wifiKeyboard=lv_keyboard_create(lv_screen_active());
- lv_obj_set_size(wifiKeyboard,LCD_W,150);lv_obj_align(wifiKeyboard,LV_ALIGN_BOTTOM_MID,0,0);
+ lv_obj_set_size(wifiKeyboard,LCD_W,218);lv_obj_align(wifiKeyboard,LV_ALIGN_BOTTOM_MID,0,0);
  lv_obj_add_flag(wifiKeyboard,LV_OBJ_FLAG_HIDDEN);
+ lv_obj_set_style_pad_all(wifiKeyboard,3,0);
+ lv_obj_set_style_pad_row(wifiKeyboard,7,0);
+ lv_obj_set_style_pad_column(wifiKeyboard,2,0);
+ lv_obj_set_style_text_font(wifiKeyboard,&lv_font_montserrat_16,0);
+ lv_obj_set_style_bg_color(wifiKeyboard,lv_color_hex(0x101827),0);
+ lv_obj_set_style_bg_color(wifiKeyboard,lv_color_hex(0x33465B),LV_PART_ITEMS);
+ lv_obj_set_style_text_color(wifiKeyboard,lv_color_hex(0xFFFFFF),LV_PART_ITEMS);
  lv_obj_add_event_cb(wifiKeyboard,uiOnKeyboardDone,LV_EVENT_ALL,nullptr);
 }
 static void uiMakeAudio(lv_obj_t *tab){
@@ -146,6 +165,14 @@ static void uiCameraSelect(lv_event_t *){
  cameraIndex=(uint8_t)lv_dropdown_get_selected(cameraSelector);
  char msg[80];snprintf(msg,sizeof(msg),"Kamera %u: 192.168.68.%u",cameraIndex+1,51+cameraIndex);
  if(cameraStatusObject)lv_label_set_text(cameraStatusObject,msg);
+}
+static void uiCameraReveal(lv_event_t *){
+ bool hidden=lv_textarea_get_password_mode(cameraPassInput);
+ if(hidden && strlen(lv_textarea_get_text(cameraPassInput))==0){
+  String password=cameraPrefs.getString("pass","");
+  lv_textarea_set_text(cameraPassInput,password.c_str());
+ }
+ lv_textarea_set_password_mode(cameraPassInput,!hidden);
 }
 static void uiCameraCredentialsSave(lv_event_t *){
  String user=lv_textarea_get_text(cameraUserInput);
@@ -189,6 +216,7 @@ static void uiMakeCamera(lv_obj_t *tab){
  lv_obj_add_event_cb(cameraUserInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
  lv_obj_add_event_cb(cameraPassInput,uiOnKeyboard,LV_EVENT_FOCUSED,nullptr);
  lv_obj_add_event_cb(cameraPassInput,uiOnKeyboard,LV_EVENT_DEFOCUSED,nullptr);
+ button(tab,"Pokaz / ukryj haslo",uiCameraReveal);
  button(tab,"Zapisz dane kamer",uiCameraCredentialsSave);
  button(tab,"Uruchom wybrana",uiCameraStart);
  button(tab,"Zatrzymaj",uiCameraStop);
@@ -241,7 +269,7 @@ static void bladeShow(uint8_t page){
  if(bladeHint){
   char hint[88];
   const uint8_t prev=(page+8)%9,next=(page+1)%9;
-  snprintf(hint,sizeof(hint),"GORA: %s  |  DOL: %s",pageNames[next],pageNames[prev]);
+  snprintf(hint,sizeof(hint),"< %s  |  %s >",pageNames[prev],pageNames[next]);
   lv_label_set_text(bladeHint,hint);
  }
 }
