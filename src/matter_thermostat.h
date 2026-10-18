@@ -16,10 +16,12 @@ static void matterThermostatBegin() {
                                MatterThermostat::THERMOSTAT_AUTO_MODE_DISABLED)) {
     Serial.println("[MATTER] Cannot create Thermostat endpoint");return;
   }
-  if (!Matter.begin()) {
-    Serial.println("[MATTER] Matter stack initialization failed");return;
-  }
+  Matter.begin();
   matterStarted=true;
+  if (!Matter.isDeviceCommissioned()) {
+    Serial.printf("[MATTER] Manual pairing code: %s\\n", Matter.getManualPairingCode().c_str());
+    Serial.printf("[MATTER] QR URL: %s\\n", Matter.getOnboardingQRCodeUrl().c_str());
+  }
   matterThermostat.setHeatingSetpoint(setPoint);
   matterThermostat.setMode(heatingEnabled ? MatterThermostat::THERMOSTAT_MODE_HEAT :
                                             MatterThermostat::THERMOSTAT_MODE_OFF);
